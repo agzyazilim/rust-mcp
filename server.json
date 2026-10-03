@@ -4,7 +4,7 @@
   "title": "AGZ Rust MCP",
   "description": "Bounded, source-write-free Rust correctness tools grounded in Cargo and rustc output.",
   "repository": {
-    "url": "https://github.com/ugur-murat-alt/agz-rust-mcp",
+    "url": "https://github.com/agzyazilim/rust-mcp",
     "source": "github"
   },
   "version": "0.4.0",

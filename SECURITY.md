@@ -8,7 +8,7 @@ run Cargo, rustdoc, and Rust Analyzer with the operating-system user's rights.
 ## Private Reporting
 
 Report suspected vulnerabilities through the private
-[GitHub Security Advisory form](https://github.com/ugur-murat-alt/agz-rust-mcp/security/advisories/new).
+[GitHub Security Advisory form](https://github.com/agzyazilim/rust-mcp/security/advisories/new).
 Do not open a public issue, discussion, or pull request before coordinated
 disclosure. Include the affected version, platform, tool/configuration, minimal
 reproduction, impact, and any process, path, cache, network, or disclosure

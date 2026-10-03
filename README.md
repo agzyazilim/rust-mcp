@@ -1,6 +1,6 @@
 # AGZ Rust MCP
 
-[![CI](https://github.com/ugur-murat-alt/agz-rust-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ugur-murat-alt/agz-rust-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/agzyazilim/rust-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/agzyazilim/rust-mcp/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/agz-rust-mcp.svg)](https://crates.io/crates/agz-rust-mcp)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -172,7 +172,7 @@ vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## Links
 
-- Repository: https://github.com/ugur-murat-alt/agz-rust-mcp
+- Repository: https://github.com/agzyazilim/rust-mcp
 - Crate: https://crates.io/crates/agz-rust-mcp
 - SDK docs: https://docs.rs/rmcp/3.1.4/rmcp/
 - MCP `2025-11-25`: https://modelcontextprotocol.io/specification/2025-11-25

@@ -34,7 +34,7 @@ Use `agz-rust-mcp skills list`, `skills show <name>`, or
 Export never replaces an existing directory. Bundled skills are available from
 `0.4.0` and are not present in `0.3.0` binaries.
 
-See the [project repository](https://github.com/ugur-murat-alt/agz-rust-mcp)
+See the [project repository](https://github.com/agzyazilim/rust-mcp)
 for client configuration, security boundaries, and release artifacts.
 
 [MIT](LICENSE)

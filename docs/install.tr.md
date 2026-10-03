@@ -79,9 +79,9 @@ betiğin kendisini doğrulayın ve çalıştırın:
 
 ```bash
 curl -fsSL -O \
-  https://github.com/ugur-murat-alt/agz-rust-mcp/releases/latest/download/install.sh
+  https://github.com/agzyazilim/rust-mcp/releases/latest/download/install.sh
 curl -fsSL -O \
-  https://github.com/ugur-murat-alt/agz-rust-mcp/releases/latest/download/SHA256SUMS
+  https://github.com/agzyazilim/rust-mcp/releases/latest/download/SHA256SUMS
 grep ' install.sh$' SHA256SUMS | sha256sum --check
 # macOS: grep ' install.sh$' SHA256SUMS | shasum -a 256 -c -
 
@@ -166,7 +166,7 @@ dizinine kurar; bu dizinin `PATH` içinde olduğundan emin olun.
 ## 4. Kaynaktan Derleme
 
 ```bash
-git clone https://github.com/ugur-murat-alt/agz-rust-mcp
+git clone https://github.com/agzyazilim/rust-mcp
 cd agz-rust-mcp
 cargo +1.88.0 build --release -p agz-rust-mcp --locked
 ./target/release/agz-rust-mcp --version
