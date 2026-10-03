@@ -82,5 +82,5 @@ require a container or OS sandbox.
 
 The crate and binary are `agz-rust-mcp`. Release tags use
 `agz-rust-mcp-v<version>`. The official MCP Registry identity is
-`io.github.ugur-murat-alt/agz-rust-mcp`, backed by the exact crates.io package
+`io.github.agzyazilim/rust-mcp`, backed by the exact crates.io package
 version and the repository's `server.json`.

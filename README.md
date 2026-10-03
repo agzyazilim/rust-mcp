@@ -79,7 +79,7 @@ The bilingual index with the full reading path is
 | Contract | Value |
 | --- | --- |
 | Crate, binary, server | `agz-rust-mcp` |
-| MCP Registry | `io.github.ugur-murat-alt/agz-rust-mcp` |
+| MCP Registry | `io.github.agzyazilim/rust-mcp` |
 | Source version | `0.4.0` |
 | First release | `0.1.0` |
 | Release tag | `agz-rust-mcp-v<version>` |
@@ -87,7 +87,7 @@ The bilingual index with the full reading path is
 | Rust MCP SDK | `rmcp` `3.1.4` |
 | Default / discovered protocol | `2025-11-25` / `2026-07-28` |
 
-MCP package ownership marker: `mcp-name: io.github.ugur-murat-alt/agz-rust-mcp`.
+MCP package ownership marker: `mcp-name: io.github.agzyazilim/rust-mcp`.
 
 ## Tools
 

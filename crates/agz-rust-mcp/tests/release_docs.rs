@@ -352,7 +352,7 @@ fn package_readme_and_license_are_in_the_publish_allowlist() {
     let package_readme =
         fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("README.md"))
             .expect("read package README");
-    assert!(package_readme.contains("mcp-name: io.github.ugur-murat-alt/agz-rust-mcp"));
+    assert!(package_readme.contains("mcp-name: io.github.agzyazilim/rust-mcp"));
 }
 
 #[test]
@@ -365,7 +365,7 @@ fn mcp_registry_metadata_matches_the_cargo_package() {
 
     let expected = serde_json::json!({
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-        "name": "io.github.ugur-murat-alt/agz-rust-mcp",
+        "name": "io.github.agzyazilim/rust-mcp",
         "title": "AGZ Rust MCP",
         "description": "Bounded, source-write-free Rust correctness tools grounded in Cargo and rustc output.",
         "repository": {

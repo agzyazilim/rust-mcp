@@ -6,7 +6,7 @@ _An AGZ Yazılım product._
 Cargo and rustc remain the authority; Rust Analyzer and static audit results are
 advisory.
 
-- MCP Registry name: `mcp-name: io.github.ugur-murat-alt/agz-rust-mcp`
+- MCP Registry name: `mcp-name: io.github.agzyazilim/rust-mcp`
 - Version: `0.4.0`
 - MSRV: Rust `1.88.0`
 - Transport: stdio

@@ -350,7 +350,7 @@ jobs:
         env:
           VERSION: ${{ steps.metadata.outputs.version }}
         run: |
-          SERVER_NAME="io.github.ugur-murat-alt%2Fagz-rust-mcp"
+          SERVER_NAME="io.github.agzyazilim%2Frust-mcp"
           ENDPOINT="https://registry.modelcontextprotocol.io/v0.1/servers/${SERVER_NAME}/versions/${VERSION}"
           STATUS="$(curl --silent --show-error --output registry-response.json --write-out '%{http_code}' "$ENDPOINT")"
           case "$STATUS" in

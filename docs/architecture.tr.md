@@ -81,5 +81,5 @@ container veya OS sandbox gerekir.
 
 Crate ve binary adı `agz-rust-mcp` değeridir. Release tag'leri
 `agz-rust-mcp-v<version>` biçimindedir. Resmî MCP Registry kimliği
-`io.github.ugur-murat-alt/agz-rust-mcp` olup tam crates.io paket sürümü ve
+`io.github.agzyazilim/rust-mcp` olup tam crates.io paket sürümü ve
 repository'deki `server.json` tarafından desteklenir.

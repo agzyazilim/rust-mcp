@@ -8,6 +8,10 @@ Changelog structure.
 
 ## [Unreleased]
 
+### Changed
+
+- MCP Registry name moved to the new org namespace: `io.github.agzyazilim/rust-mcp`.
+
 ### Removed
 
 - npm wrapper package and its distribution documentation; crates.io, release

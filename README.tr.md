@@ -82,7 +82,7 @@ Tam okuma yolunu içeren iki dilli dizin:
 | Sözleşme | Değer |
 | --- | --- |
 | Crate, binary, server | `agz-rust-mcp` |
-| MCP Registry | `io.github.ugur-murat-alt/agz-rust-mcp` |
+| MCP Registry | `io.github.agzyazilim/rust-mcp` |
 | Kaynak sürümü | `0.4.0` |
 | İlk sürüm | `0.1.0` |
 | Release tag | `agz-rust-mcp-v<version>` |
@@ -90,7 +90,7 @@ Tam okuma yolunu içeren iki dilli dizin:
 | Rust MCP SDK | `rmcp` `3.1.4` |
 | Varsayılan / keşfedilen protokol | `2025-11-25` / `2026-07-28` |
 
-MCP paket sahipliği kaydı: `mcp-name: io.github.ugur-murat-alt/agz-rust-mcp`.
+MCP paket sahipliği kaydı: `mcp-name: io.github.agzyazilim/rust-mcp`.
 
 ## Araçlar
 
