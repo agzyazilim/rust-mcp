@@ -149,7 +149,7 @@ impl Fixture {
             tool_output_bytes: 49_152,
             cancellation,
         };
-        execute_api(
+        Box::pin(execute_api(
             ApiRequest {
                 action: ApiAction::Probe,
                 anchor: ApiAnchor {
@@ -168,7 +168,7 @@ impl Fixture {
                 },
             },
             env,
-        )
+        ))
         .await
     }
 
@@ -186,7 +186,7 @@ impl Fixture {
             tool_output_bytes: 49_152,
             cancellation: CancellationToken::new(),
         };
-        execute_api(
+        Box::pin(execute_api(
             ApiRequest {
                 action: ApiAction::Resolve,
                 anchor: ApiAnchor {
@@ -201,7 +201,7 @@ impl Fixture {
                 configuration: ApiConfiguration::default(),
             },
             env,
-        )
+        ))
         .await
     }
 
