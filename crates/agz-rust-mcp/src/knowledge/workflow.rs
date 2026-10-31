@@ -7,14 +7,12 @@ pub const WORKFLOW_FOOTER: &str = "</agz-rust-mcp-checklist>";
 
 /// Stable sections kept as static data so guidance cannot contain model output.
 pub const WORKFLOW_SECTIONS: &[&str] = &[
-    "SIGNATURES\n- Read-only parameters: &str (not String, not &String); &[T] (not Vec, not &Vec<T>); &Path (not PathBuf).\n- Prefer elision; name lifetimes only when a type stores a borrow or output origin is ambiguous.",
-    "BORROWING\n- On any borrow-checker error (E0382, E0502, E0499, E0505, E0597, E0716): fix the ownership design first; .clone()/Arc<Mutex>/RefCell are last resorts and need a justification.\n- Iterator methods and HashMap entry API usually avoid the borrow fight entirely.",
-    "ERRORS\n- Everything fallible returns Result/Option; propagate with ?; no .unwrap()/.expect() without a stated invariant.",
-    "CRATES\n- Prefer std when it covers the capability. If adding a crate: verify the exact name and version via rust.crate_lookup before writing Cargo.toml; near-miss names (serde-json vs serde_json) and std modules mistaken for crates are common.",
-    "TOOLS\n- Use rust.symbol/symbols/references/definition/implementations/hierarchy for semantic facts, not grep guesses. rust.rename/refactor return write-free edit plans. rust.check remains the delivery gate; compiler output is ground truth.",
-    "CONCURRENCY\n- Share by message passing (channels) when possible; std::sync::Mutex must never be held across .await (use tokio::sync::Mutex); CPU-bound work in async code goes through spawn_blocking; await every JoinHandle.",
-    "UNSAFE\n- Avoid unsafe; if unavoidable, state the exact invariant and the code that enforces it.",
-    "DELIVERY GATE\n- Finish only when rust.check target=all passes; it selects the Cargo manifest and handles virtual-workspace formatting.",
+    "DISCOVERY\n- Read the project's rules and use workspace inspect/search/read for bounded offline context. It works before Cargo metadata or Rust Analyzer is available. Text matches are navigation hints, not semantic references.",
+    "DIAGNOSTICS\n- Use a focused check for the selected package, target and features. Read the compiler's primary span and related notes before changing code. Investigate ownership boundaries when the error concerns ownership; do not prescribe one ownership style for every API.",
+    "DEPENDENCIES\n- Resolve the dependency's actual version and source. Use docs for the relevant API and crate_lookup when adding or verifying a registry crate. Keep manifest requirements distinct from locked versions and active features.",
+    "TOOLS\n- Use test list to discover test names, test run with exact selection for focused regressions, and test compile when execution is unnecessary. Use run for one binary/example; code executes with the server user's authority. Deep context and semantic tools are optional when exposed by the selected toolset.",
+    "EVIDENCE\n- Cargo/rustc output is authoritative. Static and analyzer findings are advisory. Zero tests, opaque harness output, truncation, stale evidence and unavailable dependencies must be reported as gaps, not passes.",
+    "DELIVERY GATE\n- Run the repository's required checks for the changed behavior, features and platforms. check target=all covers the stages in one recorded configuration; use an explicit matrix when the project requires more. Never claim unmeasured speedups or broader coverage than the evidence.",
 ];
 
 /// Resource URI for the concise Rust workflow.
@@ -27,7 +25,7 @@ pub const PITFALLS_RESOURCE_URI: &str = "agz-rust-mcp://pitfalls";
 pub const ICED_RESOURCE_URI: &str = "agz-rust-mcp://iced";
 
 /// Text returned by the workflow resource.
-pub const WORKFLOW_RESOURCE: &str = "# AGZ Rust MCP workflow\n\nCompiler output is authoritative. Start with ownership and borrowing, verify external crates before adding dependencies, and use semantic results as advisory evidence. Run `check` with `target=all` before delivery. Rename and refactor results are write-free patches.\n";
+pub const WORKFLOW_RESOURCE: &str = "# AGZ Rust MCP workflow\n\nStart with bounded workspace discovery, then focused compiler checks and selected tests. Resolve dependency documentation to its actual version and source. Follow the repository's required delivery gates; semantic results are advisory and edit tools return write-free patches.\n";
 /// Text returned by the borrow-errors resource.
 pub const BORROW_ERRORS_RESOURCE: &str = "# Borrowing errors\n\nRead the full compiler diagnostic first. Prefer changing ownership boundaries, borrowing from the caller, or moving a value deliberately before adding clones. A borrow checker error is evidence about a lifetime or aliasing contract, not a request to silence the compiler.\n";
 /// Text returned by the pitfalls resource.
@@ -35,7 +33,7 @@ pub const PITFALLS_RESOURCE: &str = "# Rust pitfalls\n\nKeep subprocess argument
 /// Text returned by the Iced resource.
 pub const ICED_RESOURCE: &str = "# Iced and UI notes\n\nKeep UI state explicit, return commands from event handling, and validate asynchronous results before applying them. This resource is guidance only; the compiler and tests remain authoritative.\n";
 /// Prompt text for an explicit workflow request.
-pub const WORKFLOW_PROMPT: &str = "Work through the Rust task in small verified steps. Inspect the owning code, preserve the repository's safety and output bounds, make the smallest ownership-first change, run focused checks, and finish with `check target=all`.";
+pub const WORKFLOW_PROMPT: &str = "Inspect the Rust workspace, gather only the relevant source and dependency context, implement the requested change, run focused checks/tests, and satisfy the repository's required delivery gates. Report exact coverage and unresolved evidence.";
 
 /// Builds the complete workflow block when it fits, otherwise keeps complete
 /// sections in order until the requested token budget is reached.

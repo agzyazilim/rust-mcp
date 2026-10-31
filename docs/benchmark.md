@@ -10,11 +10,10 @@ Release claims use deterministic local gates first. Live model benchmarks are
 optional measurements and never replace compiler, protocol, package, or
 security checks.
 
-## Provider-Free Smokes
+## Required Provider-Free Smokes
 
 ```bash
 cargo run -p xtask -- protocol-smoke
-cargo run -p xtask -- opencode-smoke
 cargo run -p xtask -- benchmark-smoke
 cargo run -p xtask -- task-benchmark-smoke
 ```
@@ -22,10 +21,6 @@ cargo run -p xtask -- task-benchmark-smoke
 `protocol-smoke` starts the real stdio binary and checks initialization, tool
 discovery, structured/text parity, `2026-07-28` task creation, progress,
 cancellation, terminal state, synchronous fallback, and fixture cleanup.
-
-`opencode-smoke` runs the pinned OpenCode host against direct and grouped local
-MCP configurations. A loopback fake provider returns deterministic tool calls;
-no paid or external model endpoint is used.
 
 `benchmark-smoke` runs frozen clean and broken Rust fixtures against an oracle.
 It verifies that status and `passed` fields agree and compares current behavior
@@ -53,6 +48,57 @@ workspace CI test command, verifies corpus hashes, replay completeness,
 independent scoring, unknown usage semantics, negative controls, and balanced
 ordering. CI also invokes `task-benchmark-smoke` directly on the platform matrix
 so transcript replay and evidence publication are exercised as a product path.
+
+These three smokes are client-independent release gates. They run on Linux,
+macOS, and Windows without installing a particular agent client or contacting
+a model provider. Select a small package or test target during development;
+use the complete platform and packaging gates for release evidence. A successful
+filtered test is evidence only for the selected tests, never for the full
+workspace or every feature combination.
+
+## Offline Workspace and Catalogue Measurements
+
+On Linux, use an already-built binary to measure the real stdio `workspace`
+inspect/search/read calls and compare the `core` and `full` tool catalogues:
+
+```bash
+python3 benchmark/workspace_context_benchmark.py \
+  --binary /absolute/path/to/agz-rust-mcp \
+  --out benchmark/results/workspace-context.json \
+  --samples 20 --build-profile release
+```
+
+The standard-library script creates and removes a temporary eight-crate fixture
+without a lockfile. It records raw samples, median/nearest-rank P95, wire bytes,
+five fresh-process initialization samples, binary and fixture hashes, host
+information and load averages. Cargo and Rust Analyzer are replaced by
+execution-detecting sentinels; the run also verifies unchanged source, no new
+lockfile/target directory, JSON-RPC framing and structured/text equivalence.
+`--samples` accepts 5–200; this is an optional measurement, not a CI gate.
+
+Timings include Python transport and JSON parsing. OS page caches are not
+flushed, concurrent host load is not controlled, and profiles run in the recorded
+order. Compare like build profiles and conditions; fresh-process startup is not
+a cold-filesystem measurement. Catalogue byte reductions are not token counts,
+and these fixture measurements do not establish general Rust project or model
+performance. The current harness is Linux-only; this does not narrow the
+server's supported platforms.
+
+## Optional Legacy Client Compatibility
+
+The OpenCode2 adapter retains a separate compatibility check:
+
+```bash
+npm install --global @opencode-ai/cli@0.0.0-beta-18743
+cargo run -p xtask -- opencode-smoke
+```
+
+It runs the pinned host against direct and grouped local MCP configurations.
+A loopback fake provider returns deterministic tool calls; no paid or external
+model endpoint is used. The CI workflow's manual `legacy_opencode` input enables
+this job. It is not required by the release workflow. Changes to that adapter
+should still run this check and report its result separately from core MCP
+compatibility.
 
 ## Predeclared Task Benchmark Gates
 
@@ -120,12 +166,22 @@ cargo package -p agz-rust-mcp --locked
 cargo publish -p agz-rust-mcp --dry-run --locked
 ```
 
-The provider-free smokes, real pinned Rust Analyzer/doc adapters,
-`cargo deny check`, workflow lint, and secret/vulnerability scans complete the
-release evidence. Platform CI supplies macOS and Windows process and path
-coverage unavailable on a Linux workstation.
+The three required provider-free smokes, the real pinned Rust Analyzer smoke,
+and `cargo deny check` complete the automated release gate. Run the real docs
+adapter checks when changing that adapter. Platform CI supplies Linux, macOS,
+and Windows process and path coverage. Report any additional manual checks with
+their actual results; a configured or skipped job is not validation evidence.
 
-## Input-identity comparisons (unreleased)
+The release workflow verifies fresh installation from the packaged crate, source
+bundle identity, archive checksums, and exact package/tag/registry version
+agreement. Before publishing a new crate, it checks that `CRATES_IO_TOKEN` is
+configured and authenticates to the MCP Registry using GitHub OIDC. A missing
+credential or failed Registry login stops publication before that first write.
+The token's presence does not prove that crates.io will authorize a publish;
+the publish response remains authoritative. Existing crate versions must match
+the verified checksum, and an existing release tag is never moved or reused.
+
+## Input-identity comparisons
 
 Build `crates/agz-rust-mcp/examples/identity_measure.rs` against the baseline and
 candidate using the same toolchain/profile. Keep both binaries, then run

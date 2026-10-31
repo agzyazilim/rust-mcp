@@ -2,18 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.agzyazilim/rust-mcp",
   "title": "AGZ Rust MCP",
-  "description": "Bounded, source-write-free Rust correctness tools grounded in Cargo and rustc output.",
+  "description": "Rust development tools for offline context, compiler diagnostics, focused tests and Cargo execution.",
   "repository": {
     "url": "https://github.com/agzyazilim/rust-mcp",
     "source": "github"
   },
-  "version": "0.4.0",
+  "version": "0.5.0",
   "packages": [
     {
       "registryType": "cargo",
       "registryBaseUrl": "https://crates.io",
       "identifier": "agz-rust-mcp",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "transport": {
         "type": "stdio"
       }

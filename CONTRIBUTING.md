@@ -40,12 +40,18 @@ cargo test --workspace --all-targets --all-features --locked --no-fail-fast
 cargo +1.88.0 check --workspace --all-targets --all-features --locked
 cargo build --release --locked
 cargo run -p xtask -- protocol-smoke
-cargo run -p xtask -- opencode-smoke
 cargo run -p xtask -- benchmark-smoke
+cargo run -p xtask -- task-benchmark-smoke
 ```
 
 Use the ignored real Rust Analyzer and documentation tests when those adapters
 change. Run `cargo deny check` for dependency or policy changes.
+
+The core CI runs on Linux, macOS, and Windows and does not require a particular
+MCP client or model provider. When changing the legacy OpenCode2 adapter, install
+the pinned client and run `cargo run -p xtask -- opencode-smoke` separately. The
+CI workflow's manual `legacy_opencode` input enables the same optional
+compatibility job; it is not part of the release regression gate.
 
 ## Pull Requests
 
@@ -61,3 +67,12 @@ clean reviewed commit, exact package/tag checksum agreement, platform CI, a
 crates.io package whose README exposes the MCP ownership marker, and matching
 `server.json` metadata. Never move a published tag or overwrite a package
 version.
+
+Prepare the version, changelog, package README, and `server.json` in one reviewed
+commit. Push that exact commit to `release/<version>` to request publication, or
+dispatch the Release workflow with its exact tag and `publish=true`. The workflow
+creates the tag after all verification gates; do not create the release tag by
+hand. The `release` environment must supply `CRATES_IO_TOKEN`, and GitHub OIDC
+must authorize the MCP Registry namespace recorded in `server.json`. The publish
+job checks those prerequisites before the first package publication and never
+prints credentials.

@@ -1,6 +1,6 @@
 [package]
 name = "agz-rust-mcp"
-description = "A bounded, source-write-free Rust correctness MCP server"
+description = "General-purpose Rust MCP: offline context, diagnostics, focused tests and Cargo execution"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -11,7 +11,7 @@ method below installs the same `agz-rust-mcp` executable.
 
 ## Bundled skills (current source)
 
-Version `0.4.0` bundles four versioned `SKILL.md` files inside the same
+Since version `0.4.0`, the server bundles four versioned `SKILL.md` files inside the same
 executable. They work offline and need no separate skill package or MCP server.
 `prompts/list` discovers `workflow`, `repair`, `refactor`, and `performance`;
 `prompts/get` accepts an optional `task` string (bounded to 4,000 sanitized
@@ -61,8 +61,12 @@ The installer does not overwrite user skill instructions in the background.
 ## Requirements
 
 - Linux, macOS, or Windows on x86_64, or macOS on arm64.
-- An MCP-capable client (ZCode, OpenCode, OpenCode2, Codex, or another stdio client).
-- Rust `1.88.0` or newer only for the `cargo install` and source methods.
+- Any client that can launch a local stdio MCP server.
+- Rust `1.88.0` or newer to compile this server through `cargo install` or from source.
+- Cargo and the target project's Rust toolchain for metadata, compiler diagnostics,
+  test execution, and binary/example execution, including with a prebuilt server.
+- Rust Analyzer only for semantic navigation and edit proposals. Nextest and
+  sccache are optional accelerators; the ordinary Cargo workflow remains available.
 
 ## 1. Installer Script (`install.sh`)
 
@@ -90,11 +94,11 @@ release page instead. Environment overrides:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AGZ_RUST_MCP_VERSION` | latest release | Exact version to install. |
+| `AGZ_RUST_MCP_VERSION` | installer release version (`0.5.0` in this source) | Exact version to install. |
 | `AGZ_RUST_MCP_INSTALL_DIR` | `$HOME/.local/bin` | Absolute install directory. |
 
 ```bash
-AGZ_RUST_MCP_VERSION=0.4.0 AGZ_RUST_MCP_INSTALL_DIR="$HOME/.local/bin" bash install.sh
+AGZ_RUST_MCP_VERSION=0.5.0 AGZ_RUST_MCP_INSTALL_DIR="$HOME/.local/bin" bash install.sh
 ```
 
 The installer also verifies the archive layout and the extracted binary's
@@ -123,25 +127,39 @@ names. The files remain available and `install.sh` maps them automatically:
 Whatever the archive name, the installed executable is always `agz-rust-mcp`;
 `install.sh` renames a legacy archive executable during installation.
 
-Linux and macOS:
+Linux x86_64:
 
 ```bash
-sha256sum --check agz-rust-mcp-macos-arm64.tar.gz.sha256   # Linux
-shasum -a 256 -c agz-rust-mcp-macos-arm64.tar.gz.sha256    # macOS
+sha256sum --check agz-rust-mcp-linux-x86_64.tar.gz.sha256
+tar -xzf agz-rust-mcp-linux-x86_64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 0755 agz-rust-mcp "$HOME/.local/bin/agz-rust-mcp"
+```
+
+macOS arm64:
+
+```bash
+shasum -a 256 -c agz-rust-mcp-macos-arm64.tar.gz.sha256
 tar -xzf agz-rust-mcp-macos-arm64.tar.gz
+mkdir -p "$HOME/.local/bin"
 install -m 0755 agz-rust-mcp "$HOME/.local/bin/agz-rust-mcp"
 ```
 
 Windows PowerShell:
 
 ```powershell
-Get-FileHash .\agz-rust-mcp-windows-x86_64.tar.gz -Algorithm SHA256
-tar -xzf .\agz-rust-mcp-windows-x86_64.tar.gz
-# Compare Get-FileHash output with the .sha256 file, then add the folder to PATH.
+$archive = "agz-rust-mcp-windows-x86_64.tar.gz"
+$expected = ((Get-Content "$archive.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
+$actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($expected -notmatch '^[a-f0-9]{64}$' -or $actual -ne $expected) {
+    throw "Release archive checksum mismatch"
+}
+tar -xzf $archive
+# Add the extraction folder to PATH.
 ```
 
-Compare the printed hash with the `.sha256` file before extracting. Never run
-an archive whose checksum does not match.
+The commands verify the archive against its `.sha256` file before extracting.
+Do not proceed if verification fails.
 
 ## 3. crates.io (`cargo install`)
 
@@ -154,7 +172,7 @@ agz-rust-mcp --version
 ```
 
 `--locked` builds with the exact dependency versions recorded in `Cargo.lock`.
-Pin a release with `cargo install agz-rust-mcp --version 0.4.0 --locked`.
+Pin a release with `cargo install agz-rust-mcp --version 0.5.0 --locked`.
 Cargo installs to `$HOME/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on Windows);
 ensure that directory is on `PATH`.
 
@@ -162,7 +180,7 @@ ensure that directory is on `PATH`.
 
 ```bash
 git clone https://github.com/agzyazilim/rust-mcp
-cd agz-rust-mcp
+cd rust-mcp
 cargo +1.88.0 build --release -p agz-rust-mcp --locked
 ./target/release/agz-rust-mcp --version
 ```
@@ -188,6 +206,39 @@ Before connecting the client, install the release as described above and run
 `agz-rust-mcp --version` once to verify the executable. `AGZ_RUST_MCP_BIN` is an
 explicit local override and intentionally bypasses automatic PATH selection;
 unset it when verifying the published release.
+
+### Client-independent invocation
+
+Configure a local stdio server with the following command and arguments, using
+your client's own configuration format:
+
+```json
+{
+  "command": "agz-rust-mcp",
+  "args": ["--allow-root", "/absolute/path/to/project"]
+}
+```
+
+The descriptor above is the server invocation, not a universal client config
+file. Give the client access to the same Rust/Cargo `PATH` as your development
+shell. No model API key, OpenCode installation, or project-specific framework is
+required by the server. Start with the default tool configuration; add optional
+adapters only when the workflow needs them.
+
+For a smaller daily-work catalog, append `"--toolset", "core"` to the arguments.
+The core catalog contains exactly `workspace`, `test`, `run`, `check`,
+`crate_lookup`, and `docs`. The default `full` catalog retains the advanced
+context, semantic, repair, and profiling tools for existing clients. Select the
+same setting with `AGZ_RUST_MCP_SERVER__TOOLSET=core`, or in the server's TOML:
+
+```toml
+[server]
+toolset = "core"
+```
+
+Explicit tool enable/disable settings can further restrict the selected catalog;
+they do not add advanced tools to `core`. Reload the server after changing the
+catalog so the client refreshes its discovered tools.
 
 ### Multiple checkouts, worktrees and package subdirectories
 
@@ -264,7 +315,12 @@ Use `~/.config/opencode/opencode.json` for a user-wide configuration, or
 The OpenCode2 example below uses a different grouped configuration; choose the
 format your installed client accepts.
 
-### OpenCode2 (`opencode.jsonc`)
+<a id="opencode2-opencodejsonc"></a>
+
+### Legacy OpenCode2 (`opencode.jsonc`)
+
+This example is retained for the pinned legacy adapter. Its optional
+compatibility smoke is separate from the core MCP release gates.
 
 ```jsonc
 {
@@ -323,7 +379,7 @@ variables, then `--config` TOML, then defaults; the complete key reference is in
    ```
 
    Expect an `initialize` result naming the negotiated protocol and a
-   `tools/list` result containing the `check`, `profile`, `audit`,
+   `tools/list` result containing the `workspace`, `test`, `run`, `check`, `profile`, `audit`,
    `crate_lookup`, `docs`, `context`, `api`, `explain`, `verify`, `symbol`,
    `references`, `definition`, `symbols`, `implementations`, `hierarchy`,
    `rename`, `refactor`, `change`, `repair`, and `work` tools (tools disabled by
@@ -335,6 +391,29 @@ variables, then `--config` TOML, then defaults; the complete key reference is in
    ```bash
    cargo run -p xtask -- protocol-smoke
    ```
+
+## First Development Task
+
+Use the same sequence for a library, service, command-line application, or
+multi-package workspace:
+
+| Goal | Tool and action | Result to use |
+| --- | --- | --- |
+| Discover the project without compiling | `workspace` → `inspect` | Manifests, packages, targets, features, and available lockfile versions. |
+| Find relevant source | `workspace` → `search`, then `read` | Bounded text matches and line ranges; these are lexical results, not semantic references. |
+| Locate the first compiler failure | `check` with the selected package/target | Actual Cargo/rustc diagnostics and their source locations. |
+| Retrieve dependency evidence | `crate_lookup`, `docs`, or `context` | Evidence tied to the actual dependency version and source. |
+| List and isolate a regression test | `test` → `list`, then `run` | Selected test names and fresh test results. Use an exact name when appropriate. |
+| Compile tests without running them | `test` → `compile` | Compilation evidence only. |
+| Exercise a function through its harness | `run` with an explicit binary/example target | Exit status, bounded output, timing, and cleanup status. |
+
+Plain Rust functions need a test, example, or binary entry point to execute.
+The `run` tool accepts a Cargo target and structured arguments; it does not take
+a shell command. Cargo build scripts, tests, and programs execute local project
+code and may perform filesystem or network operations. The server's root guards
+and process limits are not an operating-system sandbox for that code. Review the
+tool's exact selected scope, truncation notices, and timeout/cancellation state;
+a result with no matching tests is not a passing regression test.
 
 ## Troubleshooting
 

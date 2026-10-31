@@ -2,6 +2,13 @@ name: CI
 
 on:
   workflow_call:
+  workflow_dispatch:
+    inputs:
+      legacy_opencode:
+        description: "Also run the optional, pinned OpenCode2 compatibility test"
+        required: false
+        default: false
+        type: boolean
   pull_request:
   push:
     branches:
@@ -25,6 +32,7 @@ jobs:
         os:
           - ubuntu-24.04
           - macos-14
+          - windows-2025
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,12 +48,6 @@ jobs:
             --component clippy \
             --component rust-analyzer
           rustup run 1.88.0 rustc --version --verbose
-
-      - name: Install pinned OpenCode V2
-        shell: bash
-        run: |
-          npm install --global @opencode-ai/cli@0.0.0-beta-18743
-          test "$(opencode2 --version)" = "opencode2 v0.0.0-beta-18743"
 
       - name: Check formatting
         shell: bash
@@ -80,10 +82,6 @@ jobs:
         shell: bash
         run: cargo +1.88.0 run --locked -p xtask -- protocol-smoke
 
-      - name: Run OpenCode integration smoke
-        shell: bash
-        run: cargo +1.88.0 run --locked -p xtask -- opencode-smoke
-
       - name: Run benchmark smoke
         shell: bash
         run: cargo +1.88.0 run --locked -p xtask -- benchmark-smoke
@@ -108,6 +106,34 @@ jobs:
           "$RA_BIN" --version
           AGZ_RUST_MCP_RUST_ANALYZER__PATH="$RA_BIN" \
             cargo +1.88.0 test -p agz-rust-mcp --test lsp_real --locked -- --ignored
+
+  legacy-client-compatibility:
+    name: Optional OpenCode2 compatibility (Linux)
+    # A specific client version must not be a prerequisite for core MCP releases.
+    # Run this explicitly from Actions when changing the legacy client adapter.
+    if: github.event_name == 'workflow_dispatch' && inputs.legacy_opencode == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install pinned Rust toolchain and legacy client
+        shell: bash
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal
+          npm install --global @opencode-ai/cli@0.0.0-beta-18743
+          test "$(opencode2 --version)" = "opencode2 v0.0.0-beta-18743"
+      - name: Build and verify legacy client compatibility
+        shell: bash
+        run: |
+          cargo +1.88.0 build -p agz-rust-mcp --locked
+          MCP_BIN_DIR="$(mktemp -d "$RUNNER_TEMP/agz-legacy-smoke.XXXXXX")"
+          install -m 0755 target/debug/agz-rust-mcp "$MCP_BIN_DIR/agz-rust-mcp"
+          AGZ_RUST_MCP_BIN="$MCP_BIN_DIR/agz-rust-mcp" \
+            cargo +1.88.0 run --locked -p xtask -- opencode-smoke
 
   optional-acceleration:
     name: Optional acceleration (Linux)

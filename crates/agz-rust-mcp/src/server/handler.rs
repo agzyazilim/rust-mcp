@@ -23,6 +23,14 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
+use crate::tools::{
+    execution::{ExecutionResult, RunRequest, TestRequest},
+    workspace::{
+        WorkspaceData, WorkspaceError, WorkspaceRequest as InspectRequest, WorkspaceStatus,
+        execute_workspace, validate_workspace_request,
+    },
+};
+
 use super::{
     AppState, ProgressReporter, ToolOutput,
     client_roots::{CancellationBridge, WorkspaceRequest},
@@ -993,6 +1001,27 @@ pub type EditOutput = ToolOutput<EditData>;
 #[allow(clippy::too_many_lines)]
 pub fn tool_definitions(config: &Config) -> Vec<Tool> {
     let mut tools = Vec::new();
+    if config.tools.workspace {
+        tools.push(tool::<InspectRequest, WorkspaceData>(
+            "workspace",
+            "Inspect Cargo manifests and lockfile versions, search Rust source text, or read numbered excerpts. Fast, offline, and no Cargo or Rust Analyzer startup. Declarations and text matches are not compiler or semantic evidence.",
+            ToolAnnotations::new().read_only(true).idempotent(true).open_world(false),
+        ));
+    }
+    if config.tools.test {
+        tools.push(tool::<TestRequest, ExecutionResult>(
+            "test",
+            "Discover tests (list), compile without running (compile), or execute selected tests (run). Supports exact names, package/target/features, ignored tests, threads, and deadlines. Runs project code; zero tests do not prove a pass.",
+            ToolAnnotations::new().read_only(false).destructive(true).idempotent(false).open_world(true),
+        ));
+    }
+    if config.tools.run {
+        tools.push(tool::<RunRequest, ExecutionResult>(
+            "run",
+            "Run one Cargo binary or example with structured program arguments, bounded output, and a deadline. Select an exact workspace package and target; arbitrary shell commands are not accepted. Project code can have side effects.",
+            ToolAnnotations::new().read_only(false).destructive(true).idempotent(false).open_world(true),
+        ));
+    }
     if config.tools.check {
         tools.push(tool::<CheckInput, CheckData>(
             "check",
@@ -1150,6 +1179,7 @@ pub fn tool_definitions(config: &Config) -> Vec<Tool> {
             ToolAnnotations::new().destructive(true).open_world(true),
         ));
     }
+    tools.retain(|tool| config.server.toolset.includes(tool.name.as_ref()));
     tools
 }
 
@@ -1175,9 +1205,6 @@ pub fn resources() -> Vec<Resource> {
             .with_mime_type("text/markdown"),
         Resource::new(PITFALLS_RESOURCE_URI, "pitfalls")
             .with_description("Safety and reliability pitfalls.")
-            .with_mime_type("text/markdown"),
-        Resource::new(ICED_RESOURCE_URI, "iced")
-            .with_description("Iced UI implementation notes.")
             .with_mime_type("text/markdown"),
     ];
     resources.extend(crate::skills::BUNDLED_SKILLS.iter().map(|skill| {
@@ -1223,7 +1250,7 @@ fn resource_text(uri: &str) -> Option<&'static str> {
 fn instructions(config: &Config) -> String {
     let tools = config.enabled_tool_names().join(", ");
     format!(
-        "Compiler and cargo output are authoritative; fix ownership first. External crates must be verified before use, and semantic/Rust Analyzer results are advisory. Available tools: {tools}. Rename and refactor return write-free patches. Bundled skills are available through prompts/list and resources/list: workflow, repair, refactor, performance. Read only the relevant skill. Use focused checks while editing and the project's required gates before delivery; check target=all covers all stages in its recorded configuration."
+        "Rust development tools for any Cargo project. Available tools: {tools}. Start with workspace inspect/search/read for offline context; it does not start Cargo or Rust Analyzer. Use check for compiler diagnostics, test list/run/compile for focused tests, and run for a Cargo binary/example. A Rust function runs through a test or example, not by name alone. Resolve dependency APIs with docs and crate_lookup; use context/navigation for deeper semantic evidence when needed. Cargo/rustc output is authoritative; source search, audit, and Rust Analyzer are advisory. Test and run execute project code and may have side effects. Rename/refactor return write-free patches. Follow the repository's feature/platform requirements and delivery gates; a subset pass is not full validation. Optional workflows are in prompts/list and resources/list; read only the one needed."
     )
 }
 
@@ -1758,6 +1785,150 @@ impl ServerHandler for RustMcpServer {
         );
 
         match name.as_str() {
+            "workspace" => {
+                let input: InspectRequest = parse_input(arguments)?;
+                validate_workspace_request(&input)
+                    .map_err(|error| McpError::invalid_params(error.to_string(), None))?;
+                let permit = self
+                    .state
+                    .try_admit()
+                    .map_err(|_| McpError::internal_error(RESOURCE_BLOCKED_REASON, None))?;
+                if self.state.is_shutting_down() {
+                    return Err(McpError::internal_error(RESOURCE_BLOCKED_REASON, None));
+                }
+                let workspace = self
+                    .resolve_workspace(input.dir.as_deref(), &context)
+                    .await
+                    .map_err(|reason| McpError::invalid_params(reason, None))?;
+                let cancellation =
+                    workspace.cancellation(context.ct.clone(), self.state.shutdown_token());
+                let token = cancellation.token();
+                let output_limit = self.state.max_output_bytes();
+                let data = tokio::task::spawn_blocking(move || {
+                    // The worker owns admission and cancellation until all reads stop,
+                    // including when a client disconnects while the future is waiting.
+                    let _permit = permit;
+                    let _cancellation = cancellation;
+                    execute_workspace(
+                        &workspace.root,
+                        &input,
+                        &token,
+                        output_limit
+                            .saturating_div(2)
+                            .saturating_sub(2048)
+                            .max(2048),
+                    )
+                })
+                .await
+                .map_err(|_| {
+                    McpError::internal_error("workspace reader stopped unexpectedly", None)
+                })?
+                .map_err(|error| match error {
+                    WorkspaceError::InvalidInput(reason) | WorkspaceError::Access(reason) => {
+                        McpError::invalid_params(reason, None)
+                    }
+                })?;
+                let status = match data.status {
+                    WorkspaceStatus::Ok => "OK",
+                    WorkspaceStatus::Partial => "PARTIAL",
+                    WorkspaceStatus::Cancelled => "CANCELLED",
+                    WorkspaceStatus::NotFound => "NOT_FOUND",
+                };
+                let truncated = data.truncated;
+                let mut output = ToolOutput::new(
+                    "workspace",
+                    status,
+                    "Bounded workspace source evidence",
+                    data,
+                )
+                .with_untrusted_data();
+                output.truncated = truncated;
+                Ok(CallToolResponse::Complete(
+                    output.into_call_tool_result(output_limit, false),
+                ))
+            }
+            "test" => {
+                let input: TestRequest = parse_input(arguments)?;
+                input
+                    .validate()
+                    .map_err(|reason| McpError::invalid_params(reason, None))?;
+                let _permit = self
+                    .state
+                    .try_admit()
+                    .map_err(|_| McpError::internal_error(RESOURCE_BLOCKED_REASON, None))?;
+                if self.state.is_shutting_down() {
+                    return Err(McpError::internal_error(RESOURCE_BLOCKED_REASON, None));
+                }
+                let workspace = self
+                    .resolve_workspace(input.dir.as_deref(), &context)
+                    .await
+                    .map_err(|reason| McpError::invalid_params(reason, None))?;
+                let cancellation =
+                    workspace.cancellation(context.ct.clone(), self.state.shutdown_token());
+                let directory = Some(workspace.root.path().to_path_buf());
+                let result = self
+                    .state
+                    .execution_service()
+                    .test(
+                        input,
+                        directory,
+                        workspace.client_roots,
+                        cancellation.token(),
+                    )
+                    .await;
+                let truncated = result.output_truncated;
+                let warnings = result.warnings.clone();
+                let mut output =
+                    ToolOutput::new("test", result.status.clone(), result.reason.clone(), result)
+                        .with_untrusted_data();
+                output.truncated = truncated;
+                output.warnings = warnings;
+                Ok(CallToolResponse::Complete(output.into_call_tool_result(
+                    self.state.max_output_bytes(),
+                    false,
+                )))
+            }
+            "run" => {
+                let input: RunRequest = parse_input(arguments)?;
+                input
+                    .validate()
+                    .map_err(|reason| McpError::invalid_params(reason, None))?;
+                let _permit = self
+                    .state
+                    .try_admit()
+                    .map_err(|_| McpError::internal_error(RESOURCE_BLOCKED_REASON, None))?;
+                if self.state.is_shutting_down() {
+                    return Err(McpError::internal_error(RESOURCE_BLOCKED_REASON, None));
+                }
+                let workspace = self
+                    .resolve_workspace(input.dir.as_deref(), &context)
+                    .await
+                    .map_err(|reason| McpError::invalid_params(reason, None))?;
+                let cancellation =
+                    workspace.cancellation(context.ct.clone(), self.state.shutdown_token());
+                let directory = Some(workspace.root.path().to_path_buf());
+                let result = self
+                    .state
+                    .execution_service()
+                    .run(
+                        input,
+                        directory,
+                        workspace.client_roots,
+                        cancellation.token(),
+                    )
+                    .await;
+                let truncated = result.output_truncated;
+                let warnings = result.warnings.clone();
+                let mut output =
+                    ToolOutput::new("run", result.status.clone(), result.reason.clone(), result)
+                        .with_untrusted_data();
+                output.truncated = truncated;
+                output.warnings = warnings;
+                Ok(CallToolResponse::Complete(output.into_call_tool_result(
+                    self.state.max_output_bytes(),
+                    false,
+                )))
+            }
             "check" => {
                 let input: CheckInput = parse_input(arguments)?;
                 validate_check(&input)?;

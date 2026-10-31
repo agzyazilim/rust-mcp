@@ -7,7 +7,7 @@ and operate it. [Architecture](architecture.md) explains the process model
 behind these tools.
 
 This document defines the public tool and configuration surface of
-`agz-rust-mcp` `0.4.0`.
+`agz-rust-mcp` `0.5.0`.
 
 Request deadlines and cancellation also cover Git probes and input-identity
 collection before and after Cargo. Git subprocesses use the shared process
@@ -16,10 +16,114 @@ from sanitized display text. Cancelled or timed-out Cargo runs do not launch pos
 Failed compilations are revalidated before offering edit/context evidence. Truncated tool envelopes retain their original
 `status`, error flag, and `untrustedData` marker.
 
+## Everyday Rust workflow
+
+The additive `workspace`, `test` and `run` tools work independently of any Rust
+framework or MCP client. `--toolset core` exposes these plus `check`, `docs` and
+`crate_lookup`; `--toolset full` is the backwards-compatible default. Set the
+same choice using `[server] toolset = "core"` or
+`AGZ_RUST_MCP_SERVER__TOOLSET=core`. CLI overrides environment, which overrides
+explicit TOML. Individual `tools.workspace`, `tools.test` and `tools.run` booleans
+(and the existing tool booleans) can disable capabilities further. The core
+preset does not initialize hidden candidate-change storage. Select full and
+restart the server when semantic navigation or advanced change workflows are needed.
+
+### Offline workspace context
+
+```json
+{"action":"inspect","dir":"/project","limit":20}
+{"action":"search","dir":"/project","query":"parse_record","caseSensitive":true,"limit":20}
+{"action":"read","dir":"/project","path":"src/lib.rs","line":40,"lineCount":60}
+```
+
+`inspect` reads manifest and lockfile declarations, including workspace-inherited
+metadata/dependencies, renamed and target-specific dependencies, feature definitions
+and declared/conventional targets. Locked candidates retain version and source;
+they are not silently treated as resolved active features. No Cargo process,
+network request or Rust Analyzer is required, including when the lockfile is absent.
+
+`search` performs literal source matching, not semantic reference discovery. It
+returns path, one-based line, excerpt and content hash. `read` returns numbered
+UTF-8 lines and a file hash. Paths are relative to the request-selected authorized
+root; path escape and unverifiable symlinks fail closed. Search/inspect omit
+`.git`, `.hg`, `.svn`, `target`, `node_modules`, `vendor`, `.cache`, `.rustup` and
+`.venv`. An explicit read can inspect an authorized relevant file.
+
+Defaults are 32 results, 16 KiB of domain data and case-insensitive search. Request
+limits are 200 results, 500 read lines, a 512-byte single-line query and a bounded
+cursor; source reads are capped at 4 MiB per file and 32 MiB per scan. Traversal
+is capped at 30,000 entries, 4,000 files, 256 manifests and depth 32. The server's
+wire budget can reduce output further. Check `scan.complete`, `truncated`,
+`notices`, `page.nextCursor` and `page.nextLine` before treating a result as complete.
+Pagination offsets describe the current scan, not a stored immutable snapshot;
+repeat discovery after source changes. `PARTIAL`, `CANCELLED` and `NOT_FOUND` are
+explicit outcomes, never proof that no matching source exists outside the scan.
+
+### Focused tests
+
+```json
+{"action":"list","dir":"/project","packages":["my_crate"]}
+{"action":"run","dir":"/project","packages":["my_crate"],"cargoTarget":{"kind":"test","name":"integration"},"filter":"module::case","exact":true}
+{"action":"compile","dir":"/project","packages":["my_crate"]}
+```
+
+`test` uses Cargo's standard test runner. `list` compiles and invokes the harness
+with `--list`; standard libtest test bodies are not requested to run. A custom
+harness can execute its own code even during discovery. `compile` passes `--no-run`
+and only proves compilation, not behavior. `run` supports a substring `filter` or
+full-name matching with `exact:true`, `ignored:"exclude"|"include"|"only"`,
+`threads:1..256` and `noFailFast`. Exact names are scoped to the selected
+package/target: the same name can exist in multiple targets. Use both selectors
+when one test executable is intended.
+
+`features`, `allFeatures`, `noDefaultFeatures`, `targetTriple` and `release` select
+the recorded configuration. `cargoTarget` supports the same typed selectors as
+check and requires explicit workspace packages. Required features are never
+automatically enabled. `maxItems` defaults to 100 and caps the returned test-name
+inventory at 1,000. Tests with opaque custom output do not acquire invented counts.
+Zero executed tests return `NO_TESTS`; compilation returns `COMPILED`; observed
+successful execution returns `PASSED` with its actual counts and coverage limits.
+
+### Binary and example execution
+
+```json
+{"dir":"/project","package":"my_crate","target":{"kind":"example","name":"demo"},"args":["input with spaces.json","--verbose"],"timeoutMs":30000}
+```
+
+`run` requires an exact workspace `package` and `target` (`bin` or `example`).
+Names are checked against Cargo metadata. It forwards at most 128 literal program
+arguments, at most 4,096 bytes each and 16,384 bytes total, after `--`. It accepts
+no shell commands, arbitrary executable paths, environment overrides or raw Cargo
+flags. To exercise a function, create/use its existing test or executable example;
+Rust functions are not invocable by symbol name alone. A successful program exit
+returns `COMPLETED`, not proof of a behavior contract.
+
+Both execution tools share a bounded admission queue and default to a 60,000 ms
+deadline, narrowed by `gate.hard_timeout_ms`. `timeoutMs` accepts 1..3,600,000;
+metadata, compilation, queueing and execution consume the same operation budget.
+Output records a sanitized display of the logical command and arguments, compiler diagnostics, first-diagnostic timing when
+observed, bounded program stdout/stderr, exit/signal, cancellation, timeout,
+cleanup/drain state and omissions. Each invocation executes anew. These are
+invocation results, not an immutable whole-workspace revision certificate; use
+`check` or the revision-bound change workflow for that contract.
+
+Program arguments execute literally. The displayed command is cleaned for safe
+rendering and may be shortened by output limits; it is not a byte-exact argv log.
+
+Cargo operations keep `--locked`: prepare the project's Cargo.lock and dependencies
+using its normal setup process when they are missing. `workspace` remains usable
+before setup. The relevant compiler, target, linker and native libraries must be
+installed. Test/build/run code can modify files or access the network with the
+server user's authority; the server itself does not apply source edits or provide
+an OS sandbox.
+
 ## Tool Catalog
 
 | Tool | Authority | Side effects | Result |
 | --- | --- | --- | --- |
+| `workspace` | Source/manifest declarations | Bounded reads; no process or network | Offline inspect/search/read with hashes and explicit completeness. |
+| `test` | Cargo/rustc + observed harness output | Compiles and optionally executes project code | Test inventory, compilation, execution counts and bounded diagnostics. |
+| `run` | Cargo/rustc + program exit | Executes a selected project binary/example | Sanitized command display, compiler/program output, exit and lifecycle evidence. |
 | `check` | Cargo/rustc | May build in a bounded target directory | Validation status, command evidence, diagnostics, and timing data. |
 | `profile` | Cargo/rustc | Runs one bounded Cargo target with `--timings` and stores its bounded HTML report under server-owned evidence | Observed rebuild report, separated admission/preflight/Cargo phases, observed/reasoned-hypothesis/unknown explanations, and baseline/candidate comparison. |
 | `audit` | Advisory scanner | Reads authorized Rust files | Bounded findings and skipped-file reasons. |
@@ -72,8 +176,8 @@ diagnostics and logs are in `steps`. Standard/full detail retains the raw bounde
 tails. All detail levels still obey the wire cap and report truncation. These
 presentation limits do not change compiler authority or executed-test counters.
 The same executable also serves four [bundled workflow skills](install.md#bundled-skills-current-source)
-through prompts/resources and the standalone `skills` CLI; the 20-tool catalog
-is unchanged.
+through prompts/resources and the standalone `skills` CLI. The default full
+catalog contains 23 tools; `--toolset core` selects the six everyday tools.
 
 In the current source, `audit` paths and directory walks are relative to the
 explicit `dir`, even when the server permits its parent directory. Unreadable,

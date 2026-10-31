@@ -16,8 +16,13 @@ Use a separate target for each checkout. Do not redirect an operation to a
 different checkout just to bypass a missing-root error.
 
 Read the owning project rules and Cargo manifests/lockfile before choosing the
-implementation. Use `context(action="prepare")` with a concrete purpose and a
-file/symbol anchor to gather a bounded capsule. Expand only an unresolved item;
+implementation. Start with `workspace(action="inspect")` for manifest, target,
+feature and dependency declarations without starting Cargo or Rust Analyzer.
+Use `workspace(action="search", query="...")` to locate relevant source, then
+`workspace(action="read", path="src/lib.rs", line=1, lineCount=80)` for a bounded
+numbered excerpt. Preserve reported omissions and pagination. Text search is
+not semantic evidence. For deeper analysis, use `context(action="prepare")`
+with a concrete purpose and a file/symbol anchor to gather a bounded capsule. Expand only an unresolved item;
 use `context(action="delta")` after source changes instead of reloading context.
 For a single semantic question, use `definition`, `references` or `symbol`.
 
@@ -33,6 +38,20 @@ the caller reviews and applies its write-free patch. `work` additionally tracks
 an explicit scope, behavior contract, acceptance gates and repair budget. Use it
 when that lifecycle is needed; keep simple edits simple. A work handoff is
 single-use and bound to its revision; inspect state before resuming after doubt.
+
+For everyday tests, use `test(action="list", packages=["member"])`, then
+`test(action="run", packages=["member"], filter="module::case", exact=true)`.
+Use `test(action="compile")` to build test executables without running them.
+`ignored`, `threads`, `noFailFast`, features, target and timeout are typed fields;
+read the live schema. A zero-test or opaque-harness result is not a verified pass.
+Run a function through a test or example, for example
+`run(package="member", target={"kind":"example","name":"demo"}, args=["input"])`.
+Program arguments are data and go after Cargo's separator; no shell is supported.
+Test and run execute project code and may modify files or access the network.
+
+The optional `--toolset core` catalog contains workspace/check/test/run/docs/
+crate_lookup. The default full catalog also exposes the deeper tools described
+below; never call a tool absent from the discovered catalog.
 
 Choose validation for the changed behavior. Select exact workspace members with
 `check.options.packages=["member"]`. For one Cargo target, also set

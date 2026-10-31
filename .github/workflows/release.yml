@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Exact tag to create, for example agz-rust-mcp-v0.3.0"
+        description: "Exact tag to create, for example agz-rust-mcp-v0.5.0"
         required: true
         type: string
       publish:
@@ -67,12 +67,6 @@ jobs:
             test "$REQUESTED_TAG" = "$EXPECTED_TAG"
           fi
 
-      - name: Install pinned OpenCode V2
-        shell: bash
-        run: |
-          npm install --global @opencode-ai/cli@0.0.0-beta-18743
-          test "$(opencode2 --version)" = "opencode2 v0.0.0-beta-18743"
-
       - name: Verify clean source and full gate
         shell: bash
         run: |
@@ -91,9 +85,9 @@ jobs:
           AGZ_RUST_MCP_BIN="$MCP_BIN_DIR/agz-rust-mcp" \
             cargo +1.88.0 run --locked -p xtask -- protocol-smoke
           AGZ_RUST_MCP_BIN="$MCP_BIN_DIR/agz-rust-mcp" \
-            cargo +1.88.0 run --locked -p xtask -- opencode-smoke
-          AGZ_RUST_MCP_BIN="$MCP_BIN_DIR/agz-rust-mcp" \
             cargo +1.88.0 run --locked -p xtask -- benchmark-smoke
+          AGZ_RUST_MCP_BIN="$MCP_BIN_DIR/agz-rust-mcp" \
+            cargo +1.88.0 run --locked -p xtask -- task-benchmark-smoke
 
       - name: Validate MCP Registry metadata
         shell: bash
@@ -139,16 +133,16 @@ jobs:
           AGZ_RUST_MCP_BIN="$INSTALL_ROOT/bin/agz-rust-mcp" \
             cargo +1.88.0 run --locked -p xtask -- protocol-smoke
           AGZ_RUST_MCP_BIN="$INSTALL_ROOT/bin/agz-rust-mcp" \
-            cargo +1.88.0 run --locked -p xtask -- opencode-smoke
-          AGZ_RUST_MCP_BIN="$INSTALL_ROOT/bin/agz-rust-mcp" \
             cargo +1.88.0 run --locked -p xtask -- benchmark-smoke
+          AGZ_RUST_MCP_BIN="$INSTALL_ROOT/bin/agz-rust-mcp" \
+            cargo +1.88.0 run --locked -p xtask -- task-benchmark-smoke
           git bundle create target/package/agz-rust-mcp-source.bundle HEAD
           printf '%s\n' "$GITHUB_SHA" > target/package/SOURCE_SHA
           cp install.sh target/package/install.sh
           (cd target/package && sha256sum agz-rust-mcp-*.crate agz-rust-mcp-source.bundle install.sh > SHA256SUMS)
 
       - name: Upload verified package artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: artifact-package-${{ github.sha }}
           path: |
@@ -217,7 +211,7 @@ jobs:
           fi
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: artifact-binary-${{ matrix.platform }}-${{ github.sha }}
           path: |
@@ -247,7 +241,7 @@ jobs:
       id-token: write
     steps:
       - name: Download verified package artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: artifact-*-${{ github.sha }}
           path: release-artifact
@@ -295,10 +289,90 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
         run: |
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+          TAG_ERROR="$(mktemp)"
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>"$TAG_ERROR"; then
             echo "Refusing to reuse or move existing tag ${RELEASE_TAG}." >&2
             exit 1
+          elif ! grep --fixed-strings --quiet '(HTTP 404)' "$TAG_ERROR"; then
+            echo 'Could not verify release tag availability; refusing publication.' >&2
+            exit 1
           fi
+
+      - name: Install pinned MCP Registry publisher
+        shell: bash
+        run: |
+          ARCHIVE="mcp-publisher_linux_amd64.tar.gz"
+          curl --fail --location --silent --show-error \
+            "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/${ARCHIVE}" \
+            --output "$ARCHIVE"
+          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  ${ARCHIVE}" \
+            | sha256sum --check
+          tar -xzf "$ARCHIVE" mcp-publisher
+          test "$(./mcp-publisher --version 2>&1 | sed -n 's/.*mcp-publisher \([^ ]*\).*/\1/p')" = "1.8.1"
+
+      - name: Check publication identity and credentials
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATES_IO_TOKEN }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          EXPECTED_NAME="io.github.${GITHUB_REPOSITORY}"
+          jq --exit-status --arg name "$EXPECTED_NAME" --arg version "$VERSION" \
+            --arg repository "https://github.com/${GITHUB_REPOSITORY}" \
+            '.name == $name and .version == $version and
+             .repository.url == $repository and
+             (.packages | length == 1) and
+             .packages[0].registryType == "cargo" and
+             .packages[0].identifier == "agz-rust-mcp" and
+             .packages[0].version == $version' \
+            release-source/server.json >/dev/null
+          grep --fixed-strings --quiet "mcp-name: ${EXPECTED_NAME}" \
+            release-source/crates/agz-rust-mcp/README.md
+          RESPONSE="$(mktemp)"
+          STATUS="$(curl --silent --show-error --location --max-time 60 \
+            --output "$RESPONSE" --write-out '%{http_code}' \
+            --user-agent "agz-rust-mcp-release/${VERSION}" \
+            "https://crates.io/api/v1/crates/agz-rust-mcp/${VERSION}")"
+          case "$STATUS" in
+            200)
+              EXPECTED_SHA="$(awk 'NR == 1 {print $1}' release-artifact/SHA256SUMS)"
+              test "$(jq -er '.version.checksum' "$RESPONSE")" = "$EXPECTED_SHA"
+              ;;
+            404)
+              if [[ -z "${CARGO_REGISTRY_TOKEN:-}" ]]; then
+                echo 'The release environment must configure CRATES_IO_TOKEN before publication.' >&2
+                exit 1
+              fi
+              ;;
+            *)
+              echo "crates.io preflight failed with HTTP ${STATUS}." >&2
+              exit 1
+              ;;
+          esac
+          if [[ -z "${ACTIONS_ID_TOKEN_REQUEST_URL:-}" || -z "${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" ]]; then
+            echo 'GitHub OIDC is unavailable; the publish job requires id-token: write.' >&2
+            exit 1
+          fi
+          SERVER_NAME="$(jq --raw-output '.name | @uri' release-source/server.json)"
+          ENDPOINT="https://registry.modelcontextprotocol.io/v0.1/servers/${SERVER_NAME}/versions/${VERSION}"
+          STATUS="$(curl --silent --show-error --max-time 60 \
+            --output registry-preflight.json --write-out '%{http_code}' "$ENDPOINT")"
+          case "$STATUS" in
+            200)
+              jq --sort-keys . release-source/server.json > expected-server.json
+              jq --sort-keys .server registry-preflight.json > published-server.json
+              cmp --silent expected-server.json published-server.json
+              ;;
+            404) ;;
+            *)
+              echo "MCP Registry preflight failed with HTTP ${STATUS}." >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Authenticate MCP Registry before package publication
+        shell: bash
+        run: ./mcp-publisher login github-oidc
 
       - name: Publish the verified package
         shell: bash
@@ -333,18 +407,6 @@ jobs:
               ;;
           esac
 
-      - name: Install pinned MCP Registry publisher
-        shell: bash
-        run: |
-          ARCHIVE="mcp-publisher_linux_amd64.tar.gz"
-          curl --fail --location --silent --show-error \
-            "https://github.com/modelcontextprotocol/registry/releases/download/v1.8.1/${ARCHIVE}" \
-            --output "$ARCHIVE"
-          echo "a06c9096dcb9727c13555b6be26c7effa707b01f06a4c561ba7a3635443cf2cc  ${ARCHIVE}" \
-            | sha256sum --check
-          tar -xzf "$ARCHIVE" mcp-publisher
-          test "$(./mcp-publisher --version 2>&1 | sed -n 's/.*mcp-publisher \([^ ]*\).*/\1/p')" = "1.8.1"
-
       - name: Publish MCP Registry metadata
         shell: bash
         env:
@@ -360,7 +422,6 @@ jobs:
               cmp --silent expected-server.json published-server.json
               ;;
             404)
-              ./mcp-publisher login github-oidc
               for attempt in 1 2 3 4 5 6; do
                 if ./mcp-publisher publish release-source/server.json; then
                   break

@@ -62,13 +62,57 @@ pub(crate) async fn verify_tool(
             .stdout
             .lines()
             .next()
-            .is_some_and(|line| line == expected || line.starts_with(&format!("{expected} (")))
+            .is_some_and(|line| compatible_version(line, expected))
     {
         return Err(format!(
-            "optional tool must report {expected}; version probe failed"
+            "optional tool must report {expected} or a compatible newer stable release; version probe failed"
         ));
     }
     Ok(())
+}
+
+/// The command contract uses stable flags. Accept newer patches in a 0.x
+/// minor line (or newer minor/patch versions within a stable major), while
+/// rejecting prereleases, changed tool identities and invented version text.
+fn compatible_version(reported: &str, expected: &str) -> bool {
+    fn parse(version: &str) -> Option<[u64; 3]> {
+        let mut parts = version.split('.');
+        let mut parsed = [0; 3];
+        for item in &mut parsed {
+            let part = parts.next()?;
+            if part.is_empty()
+                || part.len() > 10
+                || !part.bytes().all(|byte| byte.is_ascii_digit())
+                || (part.len() > 1 && part.starts_with('0'))
+            {
+                return None;
+            }
+            *item = part.parse().ok()?;
+        }
+        parts.next().is_none().then_some(parsed)
+    }
+
+    let Some((tool, minimum)) = expected.split_once(' ') else {
+        return false;
+    };
+    let Some(remainder) = reported
+        .strip_prefix(tool)
+        .and_then(|rest| rest.strip_prefix(' '))
+    else {
+        return false;
+    };
+    let (version, suffix) = remainder.split_once(' ').unwrap_or((remainder, ""));
+    if !suffix.is_empty()
+        && !(suffix.starts_with('(')
+            && suffix.ends_with(')')
+            && !suffix.chars().any(char::is_control))
+    {
+        return false;
+    }
+    let (Some(minimum), Some(actual)) = (parse(minimum), parse(version)) else {
+        return false;
+    };
+    actual >= minimum && actual[0] == minimum[0] && (minimum[0] != 0 || actual[1] == minimum[1])
 }
 
 pub(crate) struct SccacheSession {
@@ -230,6 +274,40 @@ impl SccacheSession {
             Ok(())
         } else {
             Err("sccache cleanup was incomplete".into())
+        }
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::compatible_version;
+
+    #[test]
+    fn optional_tools_accept_compatible_releases_without_an_exact_patch_pin() {
+        assert!(compatible_version(
+            "cargo-nextest 0.9.143",
+            "cargo-nextest 0.9.143"
+        ));
+        assert!(compatible_version(
+            "cargo-nextest 0.9.150 (hash 2026-10-01)",
+            "cargo-nextest 0.9.143"
+        ));
+        assert!(compatible_version("sccache 0.17.1", "sccache 0.17.0"));
+        for invalid in [
+            "cargo-nextest 0.9.142",
+            "cargo-nextest 0.10.0",
+            "cargo-nextest 1.0.0",
+            "cargo-nextest 0.9.143-beta",
+            "cargo-nextest 0.9.143.fake",
+            "cargo-nextest 0.9.143 fake",
+            "cargo-nextest 00.9.143",
+            "fake-nextest 0.9.143",
+            "cargo-nextest 0.9.143 (fake) extra",
+        ] {
+            assert!(
+                !compatible_version(invalid, "cargo-nextest 0.9.143"),
+                "{invalid}"
+            );
         }
     }
 }

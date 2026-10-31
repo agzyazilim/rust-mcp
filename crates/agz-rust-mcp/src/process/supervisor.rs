@@ -594,17 +594,71 @@ impl ProcessSupervisor {
         I: IntoIterator<Item = A>,
         A: Into<OsString>,
     {
+        self.run_authorized_inner(
+            executable.into(),
+            args.into_iter().map(Into::into).collect(),
+            options,
+            authority,
+            None,
+        )
+        .await
+    }
+
+    /// Like `run_authorized`, but preserves literal program argv from
+    /// `tail_start` onward. Use this for arguments after Cargo's `--`; their
+    /// contents are program input, not paths owned by the process guard.
+    pub async fn run_authorized_preserving_tail<I, A>(
+        &self,
+        executable: impl Into<PathBuf>,
+        args: I,
+        options: ProcessRunOptions,
+        authority: Arc<AuthorizedRoot>,
+        tail_start: usize,
+    ) -> Result<ProcessRunResult, ProcessError>
+    where
+        I: IntoIterator<Item = A>,
+        A: Into<OsString>,
+    {
+        self.run_authorized_inner(
+            executable.into(),
+            args.into_iter().map(Into::into).collect(),
+            options,
+            authority,
+            Some(tail_start),
+        )
+        .await
+    }
+
+    async fn run_authorized_inner(
+        &self,
+        executable: PathBuf,
+        args: Vec<OsString>,
+        options: ProcessRunOptions,
+        authority: Arc<AuthorizedRoot>,
+        preserved_tail: Option<usize>,
+    ) -> Result<ProcessRunResult, ProcessError> {
         let mut logical = CommandSpec::new(executable, options.cwd.clone());
-        logical.args = args.into_iter().map(Into::into).collect();
+        logical.args = args;
         logical.env = options.env.clone();
         let logical = logical.normalized()?;
-        let bound = RootBoundCommand::new(
-            &authority,
-            &logical.cwd,
-            &logical.executable,
-            &logical.args,
-            &logical.env,
-        )
+        let bound = if let Some(tail_start) = preserved_tail {
+            RootBoundCommand::new_preserving_tail(
+                &authority,
+                &logical.cwd,
+                &logical.executable,
+                &logical.args,
+                &logical.env,
+                tail_start,
+            )
+        } else {
+            RootBoundCommand::new(
+                &authority,
+                &logical.cwd,
+                &logical.executable,
+                &logical.args,
+                &logical.env,
+            )
+        }
         .map_err(|error| ProcessError::RootBinding(error.to_string()))?;
         let ambient = std::env::current_dir().map_err(|error| {
             ProcessError::RootBinding(format!(

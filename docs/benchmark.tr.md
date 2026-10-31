@@ -10,11 +10,10 @@ Release iddiaları önce belirli yerel kapıları kullanır. Canlı model
 benchmark'ları isteğe bağlı ölçümlerdir; derleyici, protokol, paket veya güvenlik
 kontrollerinin yerine geçmez.
 
-## Provider-Free Smoke'lar
+## Zorunlu Provider-Free Smoke'lar
 
 ```bash
 cargo run -p xtask -- protocol-smoke
-cargo run -p xtask -- opencode-smoke
 cargo run -p xtask -- benchmark-smoke
 cargo run -p xtask -- task-benchmark-smoke
 ```
@@ -22,10 +21,6 @@ cargo run -p xtask -- task-benchmark-smoke
 `protocol-smoke` gerçek stdio binary'sini başlatır; initialize, araç keşfi,
 belirli yapı/metin eşitliği, `2026-07-28` task oluşturma, ilerleme, iptal,
 terminal durum, eşzamanlı fallback ve fixture temizliğini denetler.
-
-`opencode-smoke`, pinli OpenCode host'u doğrudan ve gruplanmış yerel MCP
-yapılandırmalarıyla çalıştırır. Loopback sahte provider belirli araç çağrıları
-döndürür; ücretli veya dış model endpoint'i kullanılmaz.
 
 `benchmark-smoke`, dondurulmuş temiz ve bozuk Rust fixture'larını oracle'a göre
 çalıştırır. Durum ile `passed` alanının uyumunu ve güncel davranışın korunmuş
@@ -54,6 +49,57 @@ puanlamayı, unknown kullanım semantiğini, negatif kontrolleri ve dengeli sır
 doğrular. CI ayrıca platform matrisi üzerinde `task-benchmark-smoke` komutunu
 doğrudan çalıştırarak transcript replay ve kanıt yayınlama yolunu ürün akışı
 olarak sınar.
+
+Bu üç smoke, istemciden bağımsız release kapılarıdır. Belirli bir ajan istemcisi
+kurmadan veya model sağlayıcısına bağlanmadan Linux, macOS ve Windows üzerinde
+çalışırlar. Geliştirme sırasında küçük bir paket veya test hedefi seçin; release
+kanıtı için tam platform ve paketleme kapılarını kullanın. Başarılı filtreli test,
+yalnızca seçilen testler için kanıttır; tüm workspace'in veya her feature
+birleşiminin geçtiğini göstermez.
+
+## Çevrimdışı Workspace ve Araç Kataloğu Ölçümü
+
+Linux üzerinde önceden derlenmiş binary ile gerçek stdio `workspace`
+inspect/search/read çağrılarını ölçün ve `core` ile `full` kataloglarını karşılaştırın:
+
+```bash
+python3 benchmark/workspace_context_benchmark.py \
+  --binary /absolute/path/to/agz-rust-mcp \
+  --out benchmark/results/workspace-context.json \
+  --samples 20 --build-profile release
+```
+
+Yalnız Python standart kütüphanesini kullanan betik, lockfile içermeyen geçici
+sekiz-crate fixture oluşturup temizler. Ham örnekleri, medyan/en yakın sıra P95'i,
+aktarım baytlarını, beş yeni süreç başlatma ölçümünü, binary/fixture hash'lerini,
+host bilgilerini ve yük ortalamalarını kaydeder. Cargo ve Rust Analyzer yerine
+çağrıları kaydeden sentinel dosyalar kullanılır; kaynakların değişmediği,
+lockfile/target oluşturulmadığı, JSON-RPC framing ve yapı/metin eşitliği doğrulanır.
+`--samples` 5–200 kabul eder; bu isteğe bağlı ölçüm bir CI kapısı değildir.
+
+Süreler Python aktarımını ve JSON ayrıştırmasını içerir. İşletim sistemi dosya
+önbellekleri boşaltılmaz, eşzamanlı host yükü kontrol edilmez ve profiller
+kaydedilen sırada çalışır. Aynı derleme profilini ve koşulları karşılaştırın;
+yeni süreç başlatma ölçümü, soğuk dosya önbelleği ölçümü değildir. Katalog bayt
+azalması token sayısı değildir; bu fixture sonuçları tüm Rust projeleri veya
+modeller için performans iddiası oluşturmaz. Mevcut ölçüm betiği yalnız Linux'u
+destekler; sunucunun platform desteği bu nedenle daralmaz.
+
+## İsteğe Bağlı Eski İstemci Uyumluluğu
+
+OpenCode2 adaptörü ayrı bir uyumluluk kontrolünü korur:
+
+```bash
+npm install --global @opencode-ai/cli@0.0.0-beta-18743
+cargo run -p xtask -- opencode-smoke
+```
+
+Bu kontrol, sabitlenmiş host'u doğrudan ve gruplanmış yerel MCP
+yapılandırmalarıyla çalıştırır. Loopback sahte provider belirli araç çağrıları
+döndürür; ücretli veya dış model endpoint'i kullanılmaz. CI workflow'unun manuel
+`legacy_opencode` girdisi bu işi etkinleştirir. Release workflow'u için zorunlu
+değildir. Bu adaptörü değiştiren çalışmalar kontrolü yine çalıştırmalı ve
+sonucunu temel MCP uyumluluğundan ayrı bildirmelidir.
 
 ## Önceden Belirlenmiş Görev Benchmark Kapıları
 
@@ -121,12 +167,23 @@ cargo package -p agz-rust-mcp --locked
 cargo publish -p agz-rust-mcp --dry-run --locked
 ```
 
-Provider-free smoke'lar, gerçek pinli Rust Analyzer/docs adapter'ları,
-`cargo deny check`, workflow lint ve secret/vulnerability taramaları release
-kanıtını tamamlar. Platform CI, Linux iş istasyonunda çalıştırılamayan macOS ve
-Windows süreç/yol kapsamını sağlar.
+Üç zorunlu provider-free smoke, gerçek sabitlenmiş Rust Analyzer smoke'u ve
+`cargo deny check`, otomatik release kapısını tamamlar. Docs adaptörü
+değiştiğinde gerçek adaptör kontrollerini de çalıştırın. Platform CI, Linux,
+macOS ve Windows süreç/yol kapsamını sağlar. Ek manuel kontrolleri gerçek
+sonuçlarıyla bildirin; bir işin yapılandırılmış veya atlanmış olması doğrulama
+kanıtı değildir.
 
-## Girdi kimliği karşılaştırması (henüz yayımlanmadı)
+Release workflow'u, paketlenen crate'ten temiz kurulum, kaynak bundle kimliği,
+arşiv sağlama toplamları ve paket/tag/registry sürümlerinin tam eşitliğini
+doğrular. Yeni crate yayımlanmadan önce `CRATES_IO_TOKEN` yapılandırmasını denetler
+ve GitHub OIDC ile MCP Registry oturumu açar. Eksik kimlik bilgisi veya başarısız
+Registry oturumu bu ilk yazma işleminden önce yayını durdurur. Token'ın bulunması,
+crates.io'nun yayına izin vereceğini kanıtlamaz; yayın yanıtı belirleyicidir.
+Mevcut crate sürümü doğrulanmış sağlama toplamıyla eşleşmelidir; mevcut release
+tag'i taşınmaz veya yeniden kullanılmaz.
+
+## Girdi kimliği karşılaştırması
 
 `crates/agz-rust-mcp/examples/identity_measure.rs` örneğini aynı toolchain/profil
 ile eski ve yeni kod üzerinde derleyin. İki binary ile

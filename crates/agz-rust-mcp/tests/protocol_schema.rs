@@ -93,6 +93,9 @@ fn rust_inputs_preserve_legacy_fields_with_documented_optional_options_and_build
             .expect("legacy schema fixture is valid JSON");
 
     for tool in tool_definitions(&Config::defaults_at("/workspace")) {
+        if matches!(tool.name.as_ref(), "workspace" | "test" | "run") {
+            continue;
+        }
         let reference_name = match tool.name.as_ref() {
             "references" | "definition" => "symbol",
             name => name,

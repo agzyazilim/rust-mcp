@@ -100,6 +100,9 @@ async fn initialize_lists_the_static_surface_and_guidance() -> Result<()> {
     assert_eq!(
         names,
         [
+            "workspace",
+            "test",
+            "run",
             "check",
             "profile",
             "audit",
@@ -162,7 +165,13 @@ async fn initialize_lists_the_static_surface_and_guidance() -> Result<()> {
     assert!(matches!(prompt, GetPromptResponse::Complete(_)));
 
     let resources = client.peer().list_resources(None).await?;
-    assert_eq!(resources.resources.len(), 8);
+    assert_eq!(resources.resources.len(), 7);
+    assert!(
+        !resources
+            .resources
+            .iter()
+            .any(|resource| resource.name == "iced")
+    );
     let resource = client
         .peer()
         .read_resource_once(ReadResourceRequestParams::new("agz-rust-mcp://workflow"))
