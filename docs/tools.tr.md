@@ -8,7 +8,8 @@ stdout'a girmez ve tekrar eden karma `tail` alanı boştur. `reason` aşama çı
 kuyrukları korur. Her ayrıntı düzeyi toplam çıktı sınırına uyar ve kesilmeyi bildirir.
 Bu sunum sınırları derleyici otoritesini veya yürütülen test sayaçlarını değiştirmez.
 Aynı binary dört [paketli iş akışı skillini](install.tr.md#paketli-skilller-güncel-kaynak)
-prompt/resource ve bağımsız `skills` CLI üzerinden sunar; 20 araçlık katalog değişmez.
+prompt/resource ve bağımsız `skills` CLI üzerinden sunar. Varsayılan full katalog
+23 araç içerir; `--toolset core` günlük kullanım için altı araç seçer.
 
 **AGZ Yazılım ürünüdür.** Bu belge
 [belge okuma yolunun](README.tr.md) 2. adımıdır: önce sunucuyu kurun
@@ -16,7 +17,7 @@ prompt/resource ve bağımsız `skills` CLI üzerinden sunar; 20 araçlık katal
 için bu referansı kullanın. Bu araçların arkasındaki süreç modelini
 [Mimari](architecture.tr.md) açıklar.
 
-Bu belge `agz-rust-mcp` `0.4.0` sürümünün açık araç ve yapılandırma yüzeyini
+Bu belge `agz-rust-mcp` `0.5.0` sürümünün açık araç ve yapılandırma yüzeyini
 tanımlar.
 
 İstek zaman aşımı ve iptal denetimleri, Cargo öncesi ve sonrasındaki Git
@@ -27,10 +28,108 @@ derlemeler öneri/bağlam dönüşünden önce güncellik denetiminden geçer.
 Kısaltılmış araç yanıtları özgün `status`, hata bayrağı ve `untrustedData`
 işaretini korur.
 
+## Gunluk Rust akisi
+
+Yeni `workspace`, `test` ve `run` araçları framework ve MCP istemcisinden bağımsızdır.
+`--toolset core` bu üç araçla birlikte `check`, `docs`, `crate_lookup` sunar;
+varsayılan `--toolset full` mevcut araçları da korur. Aynı seçim
+`[server] toolset = "core"` veya `AGZ_RUST_MCP_SERVER__TOOLSET=core` ile yapılır.
+Öncelik CLI, ortam değişkeni, açık TOML dosyası sırasındadır.
+`tools.workspace`, `tools.test`, `tools.run` ve mevcut araç boolean'ları araçları
+ayrıca kapatabilir. Core, gizli change depolamasını başlatmaz. Derin semantik veya
+change akışları için full seçip sunucuyu yeniden başlatın.
+
+### Çevrimdışı kaynak bağlamı
+
+```json
+{"action":"inspect","dir":"/project","limit":20}
+{"action":"search","dir":"/project","query":"parse_record","caseSensitive":true,"limit":20}
+{"action":"read","dir":"/project","path":"src/lib.rs","line":40,"lineCount":60}
+```
+
+`inspect`; manifest, lockfile, workspace'ten devralınan alan/bağımlılıklar,
+yeniden adlandırılmış ve hedefe bağlı bağımlılıklar, feature tanımları ve
+bildirilen/geleneksel hedefleri okur. Lock adayları sürüm ve kaynaklarıyla korunur;
+çözümlenmiş etkin feature diye sunulmaz. Cargo, ağ ve Rust Analyzer başlatılmaz;
+Cargo.lock bulunması gerekmez.
+
+`search` metinsel eşleşme bulur; semantik referans değildir. Dosya yolu, birden
+başlayan satır numarası, kesit ve içerik hash'i döner. `read`, UTF-8 satırları
+numaralı verir. Yollar yetkilendirilmiş istek köküne göredir; dışarı çıkış ve
+kanıtlanamayan symlink durumu reddedilir. Search/inspect taramasında `.git`, `.hg`,
+`.svn`, `target`, `node_modules`, `vendor`, `.cache`, `.rustup`, `.venv` atlanır.
+Yetkili ilgili dosya açık read çağrısıyla okunabilir.
+
+Varsayılanlar 32 sonuç, 16 KiB domain verisi ve büyük/küçük harf duyarsız aramadır.
+İstek üst sınırları 200 sonuç, 500 okuma satırı, tek satırlı 512 bayt sorgu ve
+sınırlı cursor'dur. Dosya başına 4 MiB, tarama başına 32 MiB; en fazla 30.000
+entry, 4.000 dosya, 256 manifest ve 32 dizin derinliği işlenir. Sunucunun wire
+bütçesi çıktıyı daha da daraltabilir. `scan.complete`, `truncated`, `notices`,
+`page.nextCursor`, `page.nextLine` alanlarını kontrol edin. Offset mevcut taramaya
+aittir; değişmez bir snapshot değildir. Kaynak değişince keşfi yenileyin.
+`PARTIAL`, `CANCELLED`, `NOT_FOUND` tarama dışındaki kodun yokluğunu kanıtlamaz.
+
+### Odaklı testler
+
+```json
+{"action":"list","dir":"/project","packages":["my_crate"]}
+{"action":"run","dir":"/project","packages":["my_crate"],"cargoTarget":{"kind":"test","name":"integration"},"filter":"module::case","exact":true}
+{"action":"compile","dir":"/project","packages":["my_crate"]}
+```
+
+`test`, standart Cargo test çalıştırıcısını kullanır. `list`, derleyip harness'i
+`--list` ile açar; standart libtest gövdelerinin çalışması istenmez. Özel harness
+keşif sırasında da kendi kodunu çalıştırabilir. `compile`, `--no-run` kullanır ve
+yalnız derlemeyi kanıtlar. `run`; alt dize `filter`, tam ad için `exact:true`,
+`ignored:"exclude"|"include"|"only"`, `threads:1..256`, `noFailFast` alanlarını destekler.
+Aynı test adı farklı paket/hedeflerde bulunabilir; tek executable istendiğinde
+paket ve hedefi birlikte seçin.
+
+`features`, `allFeatures`, `noDefaultFeatures`, `targetTriple`, `release` gerçek
+konfigürasyonu belirler. `cargoTarget`, check ile aynı tipli seçimleri kullanır ve
+açık workspace paketi ister. Required feature kendiliğinden açılmaz. `maxItems`
+varsayılan 100, en fazla 1.000 test adı döndürür. Özel harness için test sayısı
+uydurulmaz. Sıfır çalışmış test `NO_TESTS`, yalnız derleme `COMPILED`, gözlenen
+başarılı test yürütmesi gerçek sayıları ve kapsam sınırlarıyla `PASSED` döndürür.
+
+### Binary ve example çalıştırma
+
+```json
+{"dir":"/project","package":"my_crate","target":{"kind":"example","name":"demo"},"args":["input with spaces.json","--verbose"],"timeoutMs":30000}
+```
+
+`run`, Cargo metadata karşısında doğrulanan tam workspace `package` ve `target`
+(`bin` veya `example`) ister. `--` sonrasında en fazla 128 gerçek program argümanı
+aktarır; argüman başına 4.096, toplam 16.384 bayt sınırı vardır. Shell komutu,
+keyfi executable yolu, env override veya serbest Cargo flag kabul etmez.
+Fonksiyon test ya da çalıştırılabilir example üzerinden denenir; yalnız simge
+adıyla doğrudan çağrılmaz. Başarılı program çıkışı `COMPLETED` sonucudur; davranış
+sözleşmesinin sağlandığına tek başına kanıt olmaz.
+
+İki yürütme aracı sınırlı admission kuyruğunu paylaşır. Varsayılan süre 60.000 ms,
+sunucu tavanı `gate.hard_timeout_ms` değeridir. `timeoutMs` 1..3.600.000 alır;
+kuyruk, metadata, derleme ve çalışma aynı bütçeyi tüketir. Sonuç komut ve argümanların temizlenmiş gösterimini,
+derleyici tanıları, gözlenmiş ilk tanı zamanı, sınırlı stdout/stderr, çıkış/sinyal,
+iptal/süre aşımı, cleanup/drain ve eksiltme bilgilerini içerir. Her istek yeni
+çalıştırma yapar. Bu çağrı kanıtıdır; workspace'in değişmez bütün-revizyon
+sertifikası değildir. O sözleşme için `check` veya revision-bound change akışını kullanın.
+
+Program argümanları çalıştırma sırasında aynen aktarılır. Yanıttaki komut güvenli
+gösterim için temizlenir ve çıktı sınırlarında kısaltılabilir; bayt düzeyinde argv kaydı değildir.
+
+Cargo işlemleri `--locked` kullanır. Eksik Cargo.lock/bağımlılıkları projenin normal
+kurulum yöntemiyle hazırlayın; `workspace` kurulumdan önce de kullanılabilir.
+Gerekli derleyici, target, linker ve native kütüphaneler ortamda bulunmalıdır.
+Test/build/run kodu sunucu kullanıcısının yetkileriyle dosya/ağ yan etkileri yapabilir;
+sunucu kendi kaynak düzenlemesini uygulamaz ve OS sandbox sağlamaz.
+
 ## Araç Kataloğu
 
 | Tool | Authority | Side effects | Sonuç |
 | --- | --- | --- | --- |
+| `workspace` | Kaynak/manifest bildirimleri | Sınırlı okuma; süreç/ağ yok | Hash ve açık tamamlanma bilgisiyle çevrimdışı inspect/search/read. |
+| `test` | Cargo/rustc + gözlenen harness çıktısı | Proje kodunu derler ve isteğe göre çalıştırır | Test listesi, derleme, gerçek sayılar ve sınırlı tanılar. |
+| `run` | Cargo/rustc + program çıkışı | Seçili proje binary/example hedefini çalıştırır | Temizlenmiş komut gösterimi, derleyici/program çıktısı ve yaşam döngüsü kanıtı. |
 | `check` | Cargo/rustc | Sınırlı target dizininde derleme yapabilir | Doğrulama durumu, komut kanıtı, tanılar ve zamanlama verisi. |
 | `profile` | Cargo/rustc | Tek bir sınırlı Cargo hedefini `--timings` ile çalıştırır ve sınırlı HTML raporunu sunucuya ait kanıt altında saklar | Gözlenen yeniden derleme raporu, ayrıştırılmış admission/preflight/Cargo aşamaları, gözlenen/gerekçeli hipotez/bilinmiyor açıklamaları ve baz/aday karşılaştırması. |
 | `audit` | Advisory scanner | Yetkili Rust dosyalarını okur | Sınırlı bulgular ve atlanan dosya nedenleri. |

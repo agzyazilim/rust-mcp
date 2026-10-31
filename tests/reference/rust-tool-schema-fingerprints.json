@@ -137,6 +137,16 @@
     "inputSchemaHash": "fnv1a64:b2ae887ccb86bc50",
     "outputSchemaHash": "fnv1a64:0b4c3ebe00896b99"
   },
+  "run": {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "inputSchemaHash": "fnv1a64:8ad5e7fbc447868d",
+    "outputSchemaHash": "fnv1a64:a6fd5d93ed3a2830"
+  },
   "symbol": {
     "annotations": {
       "idempotentHint": true,
@@ -155,6 +165,16 @@
     "inputSchemaHash": "fnv1a64:707bec7ec26c5fc8",
     "outputSchemaHash": "fnv1a64:eeaf84b47f98d84f"
   },
+  "test": {
+    "annotations": {
+      "destructiveHint": true,
+      "idempotentHint": false,
+      "openWorldHint": true,
+      "readOnlyHint": false
+    },
+    "inputSchemaHash": "fnv1a64:58b70872fa96c4e0",
+    "outputSchemaHash": "fnv1a64:a6fd5d93ed3a2830"
+  },
   "verify": {
     "annotations": {
       "destructiveHint": true,
@@ -170,5 +190,14 @@
     },
     "inputSchemaHash": "fnv1a64:278bf87a095b1030",
     "outputSchemaHash": "fnv1a64:b87dd050a7ad80e0"
+  },
+  "workspace": {
+    "annotations": {
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": true
+    },
+    "inputSchemaHash": "fnv1a64:6610bc0b3e0fa38b",
+    "outputSchemaHash": "fnv1a64:ec1bb94ae4bc8bab"
   }
 }

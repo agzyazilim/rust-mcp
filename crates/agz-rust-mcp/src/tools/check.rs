@@ -373,7 +373,22 @@ impl CheckService {
         client_roots: ClientRoots,
         cancellation: Option<CancellationToken>,
     ) -> Result<PlanSnapshot, (GateStatus, String)> {
-        let accepted_at = Instant::now();
+        let deadline = Instant::now() + Duration::from_millis(self.config.gate.hard_timeout_ms);
+        self.plan_snapshot_with_deadline(directory, client_roots, cancellation, deadline)
+            .await
+    }
+
+    /// Metadata discovery sharing the caller's absolute deadline, including
+    /// queueing and all preflight subprocesses.
+    pub(crate) async fn plan_snapshot_with_deadline(
+        &self,
+        directory: Option<PathBuf>,
+        client_roots: ClientRoots,
+        cancellation: Option<CancellationToken>,
+        deadline: Instant,
+    ) -> Result<PlanSnapshot, (GateStatus, String)> {
+        let deadline =
+            deadline.min(Instant::now() + Duration::from_millis(self.config.gate.hard_timeout_ms));
         let roots = self.guard.snapshot(client_roots).map_err(|error| {
             (
                 GateStatus::Inconclusive,
@@ -386,7 +401,6 @@ impl CheckService {
                 format!("verify workspace selection failed: {error}"),
             )
         })?;
-        let deadline = accepted_at + Duration::from_millis(self.config.gate.hard_timeout_ms);
         let cancellation = cancellation.unwrap_or_default();
         if cancellation.is_cancelled() {
             return Err((

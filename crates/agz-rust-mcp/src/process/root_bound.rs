@@ -61,7 +61,39 @@ impl RootBoundCommand {
         args: &[OsString],
         environment: &BTreeMap<OsString, OsString>,
     ) -> Result<Self, RootBindingError> {
-        Self::new_inner(authority, target, executable, args, environment, false)
+        Self::new_inner(
+            authority,
+            target,
+            executable,
+            args,
+            environment,
+            false,
+            None,
+        )
+    }
+
+    /// Preserve a program's literal arguments while still binding the Cargo
+    /// path arguments before its `--` separator to the verified root.
+    pub(crate) fn new_preserving_tail(
+        authority: &Arc<AuthorizedRoot>,
+        target: &Path,
+        executable: &Path,
+        args: &[OsString],
+        environment: &BTreeMap<OsString, OsString>,
+        tail_start: usize,
+    ) -> Result<Self, RootBindingError> {
+        if tail_start > args.len() {
+            return Err(RootBindingError::InvalidInput);
+        }
+        Self::new_inner(
+            authority,
+            target,
+            executable,
+            args,
+            environment,
+            false,
+            Some(tail_start),
+        )
     }
 
     /// Builds the guard command used only for a language server.  Its guarded
@@ -73,7 +105,7 @@ impl RootBoundCommand {
         args: &[OsString],
         environment: &BTreeMap<OsString, OsString>,
     ) -> Result<Self, RootBindingError> {
-        Self::new_inner(authority, target, executable, args, environment, true)
+        Self::new_inner(authority, target, executable, args, environment, true, None)
     }
 
     fn new_inner(
@@ -83,6 +115,7 @@ impl RootBoundCommand {
         args: &[OsString],
         environment: &BTreeMap<OsString, OsString>,
         lsp_root_descriptor: bool,
+        preserved_tail: Option<usize>,
     ) -> Result<Self, RootBindingError> {
         if !target.is_absolute() || target != authority.path() {
             return Err(RootBindingError::InvalidInput);
@@ -118,7 +151,11 @@ impl RootBoundCommand {
             .map_err(|error| RootBindingError::Identity(error.to_string()))?;
         let handoff_args = args
             .iter()
-            .map(|argument| {
+            .enumerate()
+            .map(|(index, argument)| {
+                if preserved_tail.is_some_and(|start| index >= start) {
+                    return argument.clone();
+                }
                 let path = Path::new(argument);
                 path.strip_prefix(target).map_or_else(
                     |_| argument.clone(),

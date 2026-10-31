@@ -61,13 +61,44 @@ pub struct Config {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerConfig {
+    pub toolset: Toolset,
     pub allow_roots: Vec<PathBuf>,
     pub allow_dependency_roots: Vec<PathBuf>,
+}
+
+/// Startup catalog selection. `core` exposes only the everyday Cargo workflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum Toolset {
+    #[default]
+    Full,
+    Core,
+}
+
+impl Toolset {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "full" => Ok(Self::Full),
+            "core" => Ok(Self::Core),
+            _ => Err("expected full or core".to_owned()),
+        }
+    }
+
+    pub fn includes(self, name: &str) -> bool {
+        self == Self::Full
+            || matches!(
+                name,
+                "workspace" | "check" | "test" | "run" | "docs" | "crate_lookup"
+            )
+    }
 }
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ToolConfig {
+    pub workspace: bool,
+    pub test: bool,
+    pub run: bool,
     pub check: bool,
     pub profile: bool,
     pub audit: bool,
@@ -312,10 +343,14 @@ impl Config {
         let state_dir = namespace.join("state");
         Self {
             server: ServerConfig {
+                toolset: Toolset::Full,
                 allow_roots: vec![cwd],
                 allow_dependency_roots: Vec::new(),
             },
             tools: ToolConfig {
+                workspace: true,
+                test: true,
+                run: true,
                 check: true,
                 profile: true,
                 audit: true,
@@ -471,6 +506,7 @@ impl Config {
             }
         }
         apply_cli(&mut config, cli)?;
+        config.apply_toolset();
         config.validate()?;
         Ok(config)
     }
@@ -752,6 +788,15 @@ impl Config {
     /// The startup tool set is static for the lifetime of a server.
     pub fn enabled_tool_names(&self) -> Vec<&'static str> {
         let mut names = Vec::new();
+        if self.tools.workspace {
+            names.push("workspace");
+        }
+        if self.tools.test {
+            names.push("test");
+        }
+        if self.tools.run {
+            names.push("run");
+        }
         if self.tools.check {
             names.push("check");
         }
@@ -804,7 +849,26 @@ impl Config {
         if self.tools.work {
             names.push("work");
         }
+        names.retain(|name| self.server.toolset.includes(name));
         names
+    }
+
+    /// Avoid initializing services and storage hidden by the selected catalog.
+    pub(crate) fn apply_toolset(&mut self) {
+        if self.server.toolset == Toolset::Core {
+            self.tools.profile = false;
+            self.tools.audit = false;
+            self.tools.context = false;
+            self.tools.api = false;
+            self.tools.verify = false;
+            self.tools.lsp = false;
+            self.tools.explain = false;
+            self.tools.rename = false;
+            self.tools.refactor = false;
+            self.tools.change = false;
+            self.tools.repair = false;
+            self.tools.work = false;
+        }
     }
 
     pub fn tasks_enabled(&self) -> bool {
@@ -852,6 +916,15 @@ pub struct CliOptions {
     pub allow_root: Option<Vec<PathBuf>>,
     #[arg(long = "allow-dependency-root", action = ArgAction::Append, value_name = "PATH")]
     pub allow_dependency_root: Option<Vec<PathBuf>>,
+    /// Select six everyday tools or the complete, backwards-compatible catalog.
+    #[arg(long, value_enum)]
+    pub toolset: Option<Toolset>,
+    #[arg(long = "tools-workspace")]
+    pub tools_workspace: Option<bool>,
+    #[arg(long = "tools-test")]
+    pub tools_test: Option<bool>,
+    #[arg(long = "tools-run")]
+    pub tools_run: Option<bool>,
     #[arg(long = "tools-check")]
     pub tools_check: Option<bool>,
     #[arg(long = "tools-profile")]
@@ -1057,6 +1130,7 @@ struct FileConfig {
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct FileServerConfig {
+    toolset: Option<Toolset>,
     allow_roots: Option<Vec<PathBuf>>,
     allow_dependency_roots: Option<Vec<PathBuf>>,
 }
@@ -1064,6 +1138,9 @@ struct FileServerConfig {
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct FileToolConfig {
+    workspace: Option<bool>,
+    test: Option<bool>,
+    run: Option<bool>,
     check: Option<bool>,
     profile: Option<bool>,
     audit: Option<bool>,
@@ -1273,6 +1350,7 @@ fn platform_cache_dir() -> PathBuf {
 #[allow(clippy::too_many_lines)]
 fn apply_file(config: &mut Config, file: FileConfig) {
     if let Some(server) = file.server {
+        apply_opt(&mut config.server.toolset, server.toolset);
         if let Some(value) = server.allow_roots {
             config.server.allow_roots = value;
         }
@@ -1281,6 +1359,9 @@ fn apply_file(config: &mut Config, file: FileConfig) {
         }
     }
     if let Some(tools) = file.tools {
+        apply_opt(&mut config.tools.workspace, tools.workspace);
+        apply_opt(&mut config.tools.test, tools.test);
+        apply_opt(&mut config.tools.run, tools.run);
         apply_opt(&mut config.tools.check, tools.check);
         apply_opt(&mut config.tools.profile, tools.profile);
         apply_opt(&mut config.tools.audit, tools.audit);
@@ -1473,12 +1554,16 @@ fn apply_environment(config: &mut Config, key: &str, value: &str) -> Result<(), 
         message,
     };
     match field {
+        "SERVER__TOOLSET" => config.server.toolset = Toolset::parse(value).map_err(invalid)?,
         "SERVER__ALLOW_ROOTS" => {
             config.server.allow_roots = parse_path_list(value).map_err(invalid)?;
         }
         "SERVER__ALLOW_DEPENDENCY_ROOTS" => {
             config.server.allow_dependency_roots = parse_path_list(value).map_err(invalid)?;
         }
+        "TOOLS__WORKSPACE" => config.tools.workspace = parse_bool(value).map_err(invalid)?,
+        "TOOLS__TEST" => config.tools.test = parse_bool(value).map_err(invalid)?,
+        "TOOLS__RUN" => config.tools.run = parse_bool(value).map_err(invalid)?,
         "TOOLS__CHECK" => config.tools.check = parse_bool(value).map_err(invalid)?,
         "TOOLS__PROFILE" => config.tools.profile = parse_bool(value).map_err(invalid)?,
         "TOOLS__AUDIT" => config.tools.audit = parse_bool(value).map_err(invalid)?,
@@ -1700,6 +1785,10 @@ fn apply_cli(config: &mut Config, cli: &CliOptions) -> Result<(), ConfigError> {
     if let Some(value) = &cli.allow_dependency_root {
         value.clone_into(&mut config.server.allow_dependency_roots);
     }
+    apply_opt(&mut config.server.toolset, cli.toolset);
+    apply_opt(&mut config.tools.workspace, cli.tools_workspace);
+    apply_opt(&mut config.tools.test, cli.tools_test);
+    apply_opt(&mut config.tools.run, cli.tools_run);
     apply_opt(&mut config.tools.check, cli.tools_check);
     apply_opt(&mut config.tools.profile, cli.tools_profile);
     apply_opt(&mut config.tools.audit, cli.tools_audit);

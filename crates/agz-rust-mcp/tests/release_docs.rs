@@ -194,6 +194,9 @@ fn assert_contract(english: &str, turkish: &str) -> Result<(), String> {
     let english_tools = keyed_table(
         english,
         &[
+            "workspace",
+            "test",
+            "run",
             "check",
             "profile",
             "audit",
@@ -215,6 +218,9 @@ fn assert_contract(english: &str, turkish: &str) -> Result<(), String> {
     let turkish_tools = keyed_table(
         turkish,
         &[
+            "workspace",
+            "test",
+            "run",
             "check",
             "profile",
             "audit",
@@ -242,6 +248,9 @@ fn assert_contract(english: &str, turkish: &str) -> Result<(), String> {
         }
     }
     for direct_name in [
+        "rust_workspace",
+        "rust_test",
+        "rust_run",
         "rust_check",
         "rust_profile",
         "rust_audit",
@@ -367,7 +376,7 @@ fn mcp_registry_metadata_matches_the_cargo_package() {
         "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
         "name": "io.github.agzyazilim/rust-mcp",
         "title": "AGZ Rust MCP",
-        "description": "Bounded, source-write-free Rust correctness tools grounded in Cargo and rustc output.",
+        "description": "Rust development tools for offline context, compiler diagnostics, focused tests and Cargo execution.",
         "repository": {
             "url": "https://github.com/agzyazilim/rust-mcp",
             "source": "github"

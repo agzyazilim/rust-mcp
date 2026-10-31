@@ -64,6 +64,7 @@ pub struct AppState {
     client_roots: ClientRootsCoordinator,
     processes: ProcessSupervisor,
     check: Arc<CheckService>,
+    execution: crate::tools::execution::ExecutionService,
     /// Present only when `tools.change` is enabled so a disabled tool never
     /// validates, creates, or touches the scratch directory at startup.
     change: Option<Arc<ChangeService>>,
@@ -115,7 +116,8 @@ impl AppState {
     /// # Errors
     ///
     /// Returns [`ConfigError`] when configuration validation fails.
-    pub fn new(config: Config) -> Result<Self, ConfigError> {
+    pub fn new(mut config: Config) -> Result<Self, ConfigError> {
+        config.apply_toolset();
         config.validate()?;
         let tasks = TaskAdmission::new(&config);
         let max_in_flight =
@@ -160,6 +162,11 @@ impl AppState {
             Arc::clone(&roots),
             processes.clone(),
         ));
+        let execution = crate::tools::execution::ExecutionService::new(
+            config.clone(),
+            Arc::clone(&check),
+            processes.clone(),
+        );
         let lsp =
             RustAnalyzerManager::from_config_authorized(&config.rust_analyzer, processes.clone())
                 .ok()
@@ -219,6 +226,7 @@ impl AppState {
             client_roots,
             processes: processes.clone(),
             check,
+            execution,
             change,
             repair,
             work,
@@ -345,6 +353,10 @@ impl AppState {
 
     pub(crate) fn check_service(&self) -> &Arc<CheckService> {
         &self.check
+    }
+
+    pub(crate) fn execution_service(&self) -> &crate::tools::execution::ExecutionService {
+        &self.execution
     }
 
     pub(crate) fn change_service(&self) -> Option<&Arc<ChangeService>> {

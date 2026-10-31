@@ -7,9 +7,39 @@
 English | [Türkçe](README.tr.md)
 
 **An AGZ Yazılım product.** `agz-rust-mcp` is a standalone stdio MCP server for
-bounded Rust correctness grounded in Cargo and rustc. It runs bounded Cargo
-validation, audits source, resolves exact-version crate documentation, provides
-Rust Analyzer navigation, and returns write-free rename/refactor packages.
+general-purpose Rust development grounded in Cargo and rustc. Discover a project
+offline, collect focused source context and compiler diagnostics, select individual
+tests, and run binaries/examples. Exact-version dependency docs, Rust Analyzer
+navigation and write-free change/refactor packages support deeper work.
+
+## Everyday workflow
+
+The same workflow works with a library, CLI, service or multi-package Cargo
+workspace. No framework-specific project structure or particular MCP client is
+required.
+
+| Need | Tool call |
+| --- | --- |
+| Map packages, declared targets, features and dependencies without compiling | `workspace(action="inspect")` |
+| Locate code and read bounded, numbered source | `workspace(action="search", query="parse_record")`, then `workspace(action="read", path="src/lib.rs", line=1, lineCount=80)` |
+| Get fresh compiler diagnostics | `check(target="check", options={"packages":["my_crate"]})` |
+| Discover actual test names | `test(action="list", packages=["my_crate"])` |
+| Run one library test by its full name | `test(action="run", packages=["my_crate"], cargoTarget={"kind":"lib"}, filter="tests::parses_record", exact=true)` |
+| Compile tests without executing them | `test(action="compile", packages=["my_crate"])` |
+| Execute a binary or example | `run(package="my_crate", target={"kind":"example","name":"demo"}, args=["input.json"], timeoutMs=30000)` |
+| Resolve an unfamiliar dependency API | `docs` with its exact version; `api` for deeper resolution/probing |
+
+Pass an absolute `dir` for the active project when the client starts elsewhere.
+A function is exercised through a test or executable example. `run` is a typed
+Cargo runner; program arguments remain literal, including spaces and shell
+metacharacters. Tests and applications execute project code with its ordinary
+side effects. Empty selections return `NO_TESTS`, not a passing test verdict.
+
+Use `agz-rust-mcp --toolset core` for a compact catalog of six everyday tools:
+`workspace`, `check`, `test`, `run`, `docs`, and `crate_lookup`. The default
+`--toolset full` preserves every existing tool plus the new additions. Individual
+`--tools-<name> false` switches can disable tools further. See the
+[full reference](docs/tools.md#everyday-rust-workflow) for limits and result states.
 
 ## Install
 
@@ -80,7 +110,7 @@ The bilingual index with the full reading path is
 | --- | --- |
 | Crate, binary, server | `agz-rust-mcp` |
 | MCP Registry | `io.github.agzyazilim/rust-mcp` |
-| Source version | `0.4.0` |
+| Source version | `0.5.0` |
 | First release | `0.1.0` |
 | Release tag | `agz-rust-mcp-v<version>` |
 | Rust edition / MSRV | `2024` / `1.88.0` |
@@ -91,10 +121,14 @@ MCP package ownership marker: `mcp-name: io.github.agzyazilim/rust-mcp`.
 
 ## Tools
 
-OpenCode2 commonly exposes grouped MCP tools as `rust_*`.
+MCP clients may prefix tool names (for example `rust_*`); use the names from
+the connected server's tool catalog.
 
-| MCP tool | OpenCode2 direct name | Default | Purpose |
+| MCP tool | Example prefixed name | Default | Purpose |
 | --- | --- | --- | --- |
+| `workspace` | `rust_workspace` | `enabled` | Inspect manifests/lockfiles, search source and read excerpts offline without Cargo or Rust Analyzer. |
+| `test` | `rust_test` | `enabled` | Discover, compile or run selected tests with exact names, ignored-test controls and bounded execution. |
+| `run` | `rust_run` | `enabled` | Run an exact Cargo binary/example with literal arguments, a deadline and bounded output. |
 | `check` | `rust_check` | `enabled` | Run bounded Cargo check, Clippy, tests, docs, or the full gate. |
 | `profile` | `rust_profile` | `enabled` | Analyze observed Cargo rebuild behavior and compare bounded build evidence without claiming unmeasured speedups. |
 | `audit` | `rust_audit` | `enabled` | Scan Rust source for bounded static findings. |

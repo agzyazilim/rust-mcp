@@ -7,12 +7,14 @@ pub mod check;
 pub mod context;
 pub mod crate_lookup;
 pub mod edits;
+pub mod execution;
 pub mod explain;
 pub mod navigation;
 pub mod profile;
 pub mod runtime;
 pub mod symbol;
 pub mod verify;
+pub mod workspace;
 
 pub use api::{
     ApiAction, ApiAnchor, ApiAnchorData, ApiConfiguration, ApiData, ApiEnvironment, ApiProbeData,

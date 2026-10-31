@@ -4,6 +4,9 @@
   "discover_protocol": "2026-07-28",
   "server": "agz-rust-mcp",
   "tools": [
+    "workspace",
+    "test",
+    "run",
     "check",
     "profile",
     "audit",
@@ -31,6 +34,6 @@
     "refactor",
     "performance"
   ],
-  "resource_count": 8,
+  "resource_count": 7,
   "provider_requests": 0
 }

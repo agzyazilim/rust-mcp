@@ -2,12 +2,13 @@
 
 _An AGZ Yazılım product._
 
-`agz-rust-mcp` is a bounded, source-write-free Rust correctness MCP server.
+`agz-rust-mcp` is a general-purpose Rust development MCP server with bounded
+source context, compiler diagnostics, focused tests and Cargo target execution.
 Cargo and rustc remain the authority; Rust Analyzer and static audit results are
 advisory.
 
 - MCP Registry name: `mcp-name: io.github.agzyazilim/rust-mcp`
-- Version: `0.4.0`
+- Version: `0.5.0`
 - MSRV: Rust `1.88.0`
 - Transport: stdio
 
@@ -16,11 +17,14 @@ cargo install agz-rust-mcp --locked
 agz-rust-mcp --version
 ```
 
-The server exposes `check`, `profile`, `audit`, `crate_lookup`, `docs`,
+The server exposes `workspace`, `test`, `run`, `check`, `profile`, `audit`, `crate_lookup`, `docs`,
 `context`, `api`, `explain`, `verify`, `symbol`, `references`, `definition`,
 `symbols`, `implementations`, `hierarchy`, `rename`, `refactor`, `change`,
 `repair`, and `work`.
-Edit tools return bounded packages and never modify source. The `context` tool
+Start with offline `workspace` discovery, then focused `check`, `test` or `run`.
+Use `--toolset core` for six everyday tools, or the default full catalog.
+Edit tools return bounded packages and never modify source. Project code run
+by Cargo tests, build scripts or `run` may have side effects. The `context` tool
 builds revision-bound capsules with per-item reasons, bounded pagination, and
 stale/delta tracking. The `api` tool resolves signatures from bounded analyzer
 evidence and type-checks candidate snippets only in a discarded candidate copy.

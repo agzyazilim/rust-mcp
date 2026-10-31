@@ -13,7 +13,7 @@ Context Protocol konuşur. Aşağıdaki yöntemlerin tümü aynı `agz-rust-mcp`
 
 ## Paketli skilller (güncel kaynak)
 
-`0.4.0` sürümü dört sürümlenmiş `SKILL.md` dosyasını aynı
+`0.4.0` sürümünden beri sunucu dört sürümlenmiş `SKILL.md` dosyasını aynı
 çalıştırılabilir dosyada taşır. Çevrimdışı çalışırlar; ayrı skill paketi veya MCP
 sunucusu gerekmez. `prompts/list`, `workflow`, `repair`, `refactor` ve `performance`
 akışlarını listeler. `prompts/get` isteğe bağlı `task` metni kabul eder (temizlenmiş
@@ -63,8 +63,12 @@ yenilenmelidir. Kurulum, kullanıcı skill talimatlarını arka planda ezmez.
 ## Gereksinimler
 
 - Linux, macOS veya Windows (x86_64) ya da macOS (arm64).
-- MCP destekli bir istemci (ZCode, OpenCode, OpenCode2, Codex veya başka bir stdio istemcisi).
-- Rust `1.88.0` veya üzeri yalnızca `cargo install` ve kaynak yöntemleri için.
+- Yerel stdio MCP sunucusu başlatabilen herhangi bir istemci.
+- Bu sunucuyu `cargo install` veya kaynaktan derlemek için Rust `1.88.0` veya üzeri.
+- Hazır sunucu binary'si kullanıldığında da metadata, derleyici tanıları, testler
+  ve binary/example çalıştırma için Cargo ile hedef projenin Rust toolchain'i.
+- Yalnız semantik gezinme ve düzenleme önerileri için Rust Analyzer. Nextest ve
+  sccache isteğe bağlı hızlandırıcılardır; normal Cargo akışı kullanılabilir.
 
 ## 1. Kurulum Betiği (`install.sh`)
 
@@ -93,11 +97,11 @@ yeniden indirin. Ortam değişkenleri:
 
 | Değişken | Varsayılan | Anlam |
 | --- | --- | --- |
-| `AGZ_RUST_MCP_VERSION` | en güncel sürüm | Kurulacak tam sürüm. |
+| `AGZ_RUST_MCP_VERSION` | kurulum betiğinin sürümü (bu kaynakta `0.5.0`) | Kurulacak tam sürüm. |
 | `AGZ_RUST_MCP_INSTALL_DIR` | `$HOME/.local/bin` | Mutlak kurulum dizini. |
 
 ```bash
-AGZ_RUST_MCP_VERSION=0.4.0 AGZ_RUST_MCP_INSTALL_DIR="$HOME/.local/bin" bash install.sh
+AGZ_RUST_MCP_VERSION=0.5.0 AGZ_RUST_MCP_INSTALL_DIR="$HOME/.local/bin" bash install.sh
 ```
 
 Betik ayrıca arşiv düzenini ve çıkarılan binary'nin `--version` çıktısını
@@ -128,25 +132,39 @@ Arşiv adı ne olursa olsun kurulan çalıştırılabilir her zaman `agz-rust-mc
 olur; `install.sh` eski arşivdeki çalıştırılabilir dosyayı kurulum sırasında
 yeniden adlandırır.
 
-Linux ve macOS:
+Linux x86_64:
 
 ```bash
-sha256sum --check agz-rust-mcp-macos-arm64.tar.gz.sha256   # Linux
-shasum -a 256 -c agz-rust-mcp-macos-arm64.tar.gz.sha256    # macOS
+sha256sum --check agz-rust-mcp-linux-x86_64.tar.gz.sha256
+tar -xzf agz-rust-mcp-linux-x86_64.tar.gz
+mkdir -p "$HOME/.local/bin"
+install -m 0755 agz-rust-mcp "$HOME/.local/bin/agz-rust-mcp"
+```
+
+macOS arm64:
+
+```bash
+shasum -a 256 -c agz-rust-mcp-macos-arm64.tar.gz.sha256
 tar -xzf agz-rust-mcp-macos-arm64.tar.gz
+mkdir -p "$HOME/.local/bin"
 install -m 0755 agz-rust-mcp "$HOME/.local/bin/agz-rust-mcp"
 ```
 
 Windows PowerShell:
 
 ```powershell
-Get-FileHash .\agz-rust-mcp-windows-x86_64.tar.gz -Algorithm SHA256
-tar -xzf .\agz-rust-mcp-windows-x86_64.tar.gz
-# Get-FileHash çıktısını .sha256 dosyasıyla karşılaştırın, sonra klasörü PATH'e ekleyin.
+$archive = "agz-rust-mcp-windows-x86_64.tar.gz"
+$expected = ((Get-Content "$archive.sha256" -Raw) -split '\s+')[0].ToLowerInvariant()
+$actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($expected -notmatch '^[a-f0-9]{64}$' -or $actual -ne $expected) {
+    throw "Release archive checksum mismatch"
+}
+tar -xzf $archive
+# Çıkarma klasörünü PATH'e ekleyin.
 ```
 
-Çıkarma öncesinde yazdırılan hash'i `.sha256` dosyasıyla karşılaştırın. Sağlama
-toplamı eşleşmeyen arşivi asla çalıştırmayın.
+Komutlar arşivi çıkarmadan önce `.sha256` dosyasıyla doğrular.
+Doğrulama başarısız olursa devam etmeyin.
 
 ## 3. crates.io (`cargo install`)
 
@@ -159,7 +177,7 @@ agz-rust-mcp --version
 ```
 
 `--locked`, `Cargo.lock` içinde kayıtlı tam bağımlılık sürümleriyle derler.
-Belirli bir sürüm için `cargo install agz-rust-mcp --version 0.4.0 --locked`
+Belirli bir sürüm için `cargo install agz-rust-mcp --version 0.5.0 --locked`
 kullanın. Cargo `$HOME/.cargo/bin` (Windows'ta `%USERPROFILE%\.cargo\bin`)
 dizinine kurar; bu dizinin `PATH` içinde olduğundan emin olun.
 
@@ -167,7 +185,7 @@ dizinine kurar; bu dizinin `PATH` içinde olduğundan emin olun.
 
 ```bash
 git clone https://github.com/agzyazilim/rust-mcp
-cd agz-rust-mcp
+cd rust-mcp
 cargo +1.88.0 build --release -p agz-rust-mcp --locked
 ./target/release/agz-rust-mcp --version
 ```
@@ -195,6 +213,40 @@ yola yönlendirin. Tam geliştirme kapısı için
 çalıştırılabilir dosyayı `agz-rust-mcp --version` ile bir kez doğrulayın.
 `AGZ_RUST_MCP_BIN` bilinçli yerel geçersiz kılmadır ve otomatik PATH seçimini
 atlar; yayımlanmış sürümü doğrularken bu değişkeni kaldırın.
+
+### İstemciden bağımsız başlatma
+
+İstemcinizin kendi yapılandırma biçimini kullanarak aşağıdaki komut ve
+argümanlarla yerel stdio sunucusu tanımlayın:
+
+```json
+{
+  "command": "agz-rust-mcp",
+  "args": ["--allow-root", "/absolute/path/to/project"]
+}
+```
+
+Yukarıdaki tanım sunucunun başlatılmasını gösterir; tüm istemciler için ortak
+bir ayar dosyası değildir. İstemciye geliştirme kabuğunuzdaki Rust/Cargo `PATH`
+erişimini verin. Sunucu model API anahtarı, OpenCode kurulumu veya projeye özel
+bir framework gerektirmez. Varsayılan araç yapılandırmasıyla başlayın; isteğe
+bağlı adaptörleri yalnız akış ihtiyaç duyduğunda ekleyin.
+
+Günlük çalışma için daha küçük katalog isterseniz argümanlara
+`"--toolset", "core"` ekleyin. Core kataloğu tam olarak `workspace`, `test`,
+`run`, `check`, `crate_lookup` ve `docs` araçlarını içerir. Varsayılan `full`
+kataloğu mevcut istemciler için gelişmiş context, semantik, onarım ve profil
+araçlarını korur. Aynı ayarı `AGZ_RUST_MCP_SERVER__TOOLSET=core` ile veya
+sunucunun TOML dosyasında seçebilirsiniz:
+
+```toml
+[server]
+toolset = "core"
+```
+
+Açık araç etkinleştirme/kapatma ayarları seçilen kataloğu daha da daraltabilir;
+`core` içine gelişmiş araç eklemez. Kataloğu değiştirdikten sonra istemcinin
+keşfettiği araçları yenilemesi için sunucuyu yeniden başlatın.
 
 ### Birden çok checkout, worktree ve paket alt dizini
 
@@ -271,7 +323,12 @@ Kullanıcı genelinde `~/.config/opencode/opencode.json`, proje içinde
 Aşağıdaki OpenCode2 örneği farklı, gruplu bir yapı kullanır; kurulu istemcinizin
 kabul ettiği biçimi seçin.
 
-### OpenCode2 (`opencode.jsonc`)
+<a id="opencode2-opencodejsonc"></a>
+
+### Eski OpenCode2 (`opencode.jsonc`)
+
+Bu örnek sabitlenmiş eski adaptör için korunmaktadır. İsteğe bağlı uyumluluk
+smoke'u temel MCP release kapılarından ayrıdır.
 
 ```jsonc
 {
@@ -330,7 +387,7 @@ Yapılandırma önceliği CLI bayrakları, `AGZ_RUST_MCP_*` ortam değişkenleri
    ```
 
    `initialize` sonucunda uzlaşılan protokol adını, `tools/list` sonucunda
-   `check`, `profile`, `audit`, `crate_lookup`, `docs`, `context`, `api`,
+   `workspace`, `test`, `run`, `check`, `profile`, `audit`, `crate_lookup`, `docs`, `context`, `api`,
    `explain`, `verify`, `symbol`, `references`, `definition`, `symbols`,
    `implementations`, `hierarchy`, `rename`, `refactor`, `change`, `repair` ve
    `work` araçlarını bekleyin (yapılandırmayla kapatılan araçlar listelenmez).
@@ -341,6 +398,29 @@ Yapılandırma önceliği CLI bayrakları, `AGZ_RUST_MCP_*` ortam değişkenleri
    ```bash
    cargo run -p xtask -- protocol-smoke
    ```
+
+## İlk Geliştirme Görevi
+
+Kütüphane, servis, komut satırı uygulaması veya çok paketli workspace için aynı
+akışı kullanın:
+
+| Amaç | Araç ve eylem | Kullanılacak sonuç |
+| --- | --- | --- |
+| Derlemeden projeyi keşfetmek | `workspace` → `inspect` | Manifestler, paketler, hedefler, feature'lar ve mevcut lockfile sürümleri. |
+| İlgili kaynağı bulmak | `workspace` → `search`, ardından `read` | Sınırlı metin eşleşmeleri ve satır aralıkları; semantik referans değil metin aramasıdır. |
+| İlk derleyici hatasını bulmak | Seçilen paket/hedef ile `check` | Gerçek Cargo/rustc tanıları ve kaynak konumları. |
+| Bağımlılık kanıtını toplamak | `crate_lookup`, `docs` veya `context` | Gerçek bağımlılık sürümü ve kaynağına bağlı kanıt. |
+| Regresyon testini listeleyip ayırmak | `test` → `list`, ardından `run` | Seçilen test adları ve yeni test sonuçları. Uygunsa tam ad kullanın. |
+| Testleri çalıştırmadan derlemek | `test` → `compile` | Yalnız derleme kanıtı. |
+| Fonksiyonu test/example üzerinden denemek | Açık binary/example hedefiyle `run` | Çıkış durumu, sınırlı çıktı, süre ve süreç temizleme durumu. |
+
+Sıradan Rust fonksiyonları çalıştırılabilmek için test, example veya binary giriş
+noktasına ihtiyaç duyar. `run`, Cargo hedefi ve yapılandırılmış argümanlar alır;
+shell komutu almaz. Cargo build script'leri, testler ve programlar yerel proje
+kodunu çalıştırır; dosya veya ağ işlemleri yapabilir. Sunucunun kök denetimleri
+ve süreç sınırları, bu kod için işletim sistemi sandbox'ı değildir. Seçilen tam
+kapsamı, kesilme bildirimlerini ve timeout/iptal durumunu inceleyin; eşleşen test
+bulunmaması başarılı regresyon testi sayılmaz.
 
 ## Sorun Giderme
 

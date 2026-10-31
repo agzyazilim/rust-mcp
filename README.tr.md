@@ -7,10 +7,39 @@
 [English](README.md) | Türkçe
 
 **AGZ Yazılım ürünüdür.** `agz-rust-mcp`, Cargo ve rustc çıktısına dayanan
-sınırlı Rust doğruluğu için bağımsız bir stdio MCP sunucusudur. Sınırlı Cargo
-doğrulaması çalıştırır, kaynak kodu denetler, tam sürüme ait crate belgelerini
-çözer, Rust Analyzer ile gezinme sağlar ve kaynağa yazmayan rename/refactor
-paketleri döndürür.
+genel amaçlı Rust geliştirme için bağımsız bir stdio MCP sunucusudur. Projeyi
+çevrimdışı keşfeder, ilgili kaynak bağlamını ve derleyici hatalarını toplar,
+seçili testleri ve binary/example hedeflerini çalıştırır. Tam sürümlü bağımlılık
+belgeleri, Rust Analyzer ve kaynağa yazmayan değişiklik paketleri derin
+inceleme ve refactor çalışmalarını destekler.
+
+## Günlük geliştirme akışı
+
+Aynı akış kütüphane, CLI, servis veya çok paketli Cargo workspace için
+kullanılır. Belirli bir framework ya da MCP istemcisi gerekmez.
+
+| İhtiyaç | Araç çağrısı |
+| --- | --- |
+| Derleme başlatmadan paket, hedef, feature ve bağımlılık bildirimlerini gör | `workspace(action="inspect")` |
+| Kodu bul ve sınırlı, satır numaralı kaynak oku | `workspace(action="search", query="parse_record")`, ardından `workspace(action="read", path="src/lib.rs", line=1, lineCount=80)` |
+| Güncel derleyici hatalarını al | `check(target="check", options={"packages":["my_crate"]})` |
+| Gerçek test adlarını keşfet | `test(action="list", packages=["my_crate"])` |
+| Tam adıyla tek kütüphane testi çalıştır | `test(action="run", packages=["my_crate"], cargoTarget={"kind":"lib"}, filter="tests::parses_record", exact=true)` |
+| Testleri çalıştırmadan derle | `test(action="compile", packages=["my_crate"])` |
+| Binary veya example çalıştır | `run(package="my_crate", target={"kind":"example","name":"demo"}, args=["input.json"], timeoutMs=30000)` |
+| Bilinmeyen bağımlılık API'sini çöz | Tam sürümüyle `docs`; derin çözümleme/deneme için `api` |
+
+İstemci başka dizinden açılıyorsa etkin projenin mutlak `dir` yolunu verin.
+Fonksiyon test veya çalıştırılabilir example üzerinden yürütülür. `run`, tipli
+Cargo çalıştırıcısıdır; boşluk ve shell karakterleri içeren program argümanları
+aynen aktarılır. Test ve uygulama kodunun normal yan etkileri olabilir.
+Boş seçimler başarılı test yerine `NO_TESTS` döndürür.
+
+Altı günlük araçtan oluşan küçük katalog için `agz-rust-mcp --toolset core`
+kullanın: `workspace`, `check`, `test`, `run`, `docs`, `crate_lookup`.
+Varsayılan `--toolset full`, mevcut araçların tamamını ve yeni eklemeleri sunar.
+`--tools-<name> false` seçenekleri araçları ayrıca kapatabilir. Sınırlar ve
+sonuç durumları için [tam referansı](docs/tools.tr.md#gunluk-rust-akisi) okuyun.
 
 ## Kurulum
 
@@ -83,7 +112,7 @@ Tam okuma yolunu içeren iki dilli dizin:
 | --- | --- |
 | Crate, binary, server | `agz-rust-mcp` |
 | MCP Registry | `io.github.agzyazilim/rust-mcp` |
-| Kaynak sürümü | `0.4.0` |
+| Kaynak sürümü | `0.5.0` |
 | İlk sürüm | `0.1.0` |
 | Release tag | `agz-rust-mcp-v<version>` |
 | Rust edition / MSRV | `2024` / `1.88.0` |
@@ -94,10 +123,14 @@ MCP paket sahipliği kaydı: `mcp-name: io.github.agzyazilim/rust-mcp`.
 
 ## Araçlar
 
-OpenCode2 gruplanmış MCP araçlarını çoğunlukla `rust_*` adıyla gösterir.
+MCP istemcileri araç adlarına `rust_*` gibi önekler ekleyebilir; bağlı
+sunucunun araç kataloğunda dönen adları kullanın.
 
-| MCP tool | OpenCode2 direct name | Default | Amaç |
+| MCP tool | Example prefixed name | Default | Amaç |
 | --- | --- | --- | --- |
+| `workspace` | `rust_workspace` | `enabled` | Cargo veya Rust Analyzer başlatmadan manifest/lockfile incele, kaynak ara ve kesit oku. |
+| `test` | `rust_test` | `enabled` | Tam ad, ignored-test seçenekleri ve sınırlı süreyle test keşfet, derle veya çalıştır. |
+| `run` | `rust_run` | `enabled` | Tam seçilmiş Cargo binary/example hedefini gerçek argümanlar, süre ve çıktı sınırıyla çalıştır. |
 | `check` | `rust_check` | `enabled` | Sınırlı Cargo check, Clippy, test, docs veya tam kapıyı çalıştırır. |
 | `profile` | `rust_profile` | `enabled` | Gözlenen Cargo yeniden derleme davranışını analiz eder ve ölçülmemiş hız iddiası kurmadan sınırlı derleme kanıtını karşılaştırır. |
 | `audit` | `rust_audit` | `enabled` | Rust kaynağını sınırlı statik bulgular için tarar. |

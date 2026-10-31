@@ -2103,36 +2103,63 @@ fn compare_versions(left: &str, right: &str) -> std::cmp::Ordering {
 }
 
 fn resolver_label(snapshot: &WorkspaceSnapshot, authority: &AuthorizedRoot) -> String {
-    if let Ok(bytes) = authority.read_file(&snapshot.manifest_path, MAX_CONFIG_BYTES)
-        && let Ok(text) = String::from_utf8(bytes)
-        && let Ok(value) = text.parse::<toml::Value>()
-        && let Some(resolver) = value
-            .get("workspace")
-            .and_then(|workspace| workspace.get("resolver"))
-            .and_then(toml::Value::as_str)
-    {
-        return resolver.to_owned();
+    // Resolver selection is workspace-wide. A request made from a member must
+    // inspect the root manifest, never the selected member's resolver/edition.
+    // https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
+    let root_manifest = snapshot.workspace_root.join("Cargo.toml");
+    let Ok(bytes) = authority.read_file(&root_manifest, MAX_CONFIG_BYTES) else {
+        return "unknown".to_owned();
+    };
+    let Ok(text) = String::from_utf8(bytes) else {
+        return "unknown".to_owned();
+    };
+    let Ok(value) = toml::from_str::<toml::Value>(&text) else {
+        return "unknown".to_owned();
+    };
+    let explicit = value
+        .get("workspace")
+        .and_then(|workspace| workspace.get("resolver"))
+        .or_else(|| {
+            value
+                .get("package")
+                .and_then(|package| package.get("resolver"))
+        });
+    if let Some(resolver) = explicit {
+        return match resolver.as_str() {
+            Some(resolver @ ("1" | "2" | "3")) => resolver.to_owned(),
+            _ => "unknown".to_owned(),
+        };
     }
-    let resolver = snapshot
+    if value.get("package").is_none() {
+        // A virtual workspace has no root-package edition from which Cargo can
+        // infer a newer resolver; even 2024-edition members keep resolver 1.
+        return if value.get("workspace").is_some() {
+            "virtual-workspace-default (1)".to_owned()
+        } else {
+            "unknown".to_owned()
+        };
+    }
+    // Cargo metadata supplies the root package's effective edition, including
+    // edition.workspace inheritance. Other members do not affect this default.
+    snapshot
         .metadata
         .packages
         .iter()
-        .filter(|package| snapshot.metadata.workspace_members.contains(&package.id))
-        .map(|package| resolver_for_edition(package.edition))
-        .max()
-        .unwrap_or(0);
-    match resolver {
-        0 => "unknown".to_owned(),
-        other => format!("edition-default ({other})"),
-    }
+        .find(|package| package.manifest_path.as_std_path() == root_manifest)
+        .and_then(|package| resolver_for_edition(package.edition))
+        .map_or_else(
+            || "unknown".to_owned(),
+            |resolver| format!("edition-default ({resolver})"),
+        )
 }
 
-/// Cargo resolver defaults by edition: 2015 -> 1, 2018/2021 -> 2, 2024 -> 3.
-fn resolver_for_edition(edition: cargo_metadata::Edition) -> u8 {
+/// Cargo defaults: 2015/2018 -> 1, 2021 -> 2, 2024 -> 3.
+fn resolver_for_edition(edition: cargo_metadata::Edition) -> Option<u8> {
     match edition {
-        cargo_metadata::Edition::E2024 => 3,
-        cargo_metadata::Edition::E2021 | cargo_metadata::Edition::E2018 => 2,
-        _ => 1,
+        cargo_metadata::Edition::E2024 => Some(3),
+        cargo_metadata::Edition::E2021 => Some(2),
+        cargo_metadata::Edition::E2015 | cargo_metadata::Edition::E2018 => Some(1),
+        _ => None,
     }
 }
 
@@ -4929,10 +4956,12 @@ mod tests {
     #[test]
     fn resolver_defaults_follow_the_cargo_edition_matrix() {
         use cargo_metadata::Edition;
-        assert_eq!(resolver_for_edition(Edition::E2015), 1);
-        assert_eq!(resolver_for_edition(Edition::E2018), 2);
-        assert_eq!(resolver_for_edition(Edition::E2021), 2);
-        assert_eq!(resolver_for_edition(Edition::E2024), 3);
+        assert_eq!(resolver_for_edition(Edition::E2015), Some(1));
+        assert_eq!(resolver_for_edition(Edition::E2018), Some(1));
+        assert_eq!(resolver_for_edition(Edition::E2021), Some(2));
+        assert_eq!(resolver_for_edition(Edition::E2024), Some(3));
+        assert_eq!(resolver_for_edition(Edition::_E2027), None);
+        assert_eq!(resolver_for_edition(Edition::_E2030), None);
     }
 
     #[test]

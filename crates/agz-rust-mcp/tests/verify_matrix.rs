@@ -1099,3 +1099,132 @@ async fn msrv_cell_actually_invokes_the_selected_compiler() {
         "toolchain binding must change the command hash"
     );
 }
+
+fn resolver_project(label: &str, root_manifest: &str, member_manifest: &str) -> TestProject {
+    let project = TestProject::new(label, "", "pub fn root_value() {}\n");
+    fs::write(project.root.join("Cargo.toml"), root_manifest).unwrap();
+    fs::create_dir_all(project.root.join("member/src")).unwrap();
+    fs::write(project.root.join("member/Cargo.toml"), member_manifest).unwrap();
+    fs::write(
+        project.root.join("member/src/lib.rs"),
+        "pub fn member_value() {}\n",
+    )
+    .unwrap();
+    let root_package = toml::from_str::<toml::Table>(root_manifest)
+        .unwrap()
+        .contains_key("package");
+    let mut lock = "version = 4\n".to_owned();
+    if root_package {
+        lock.push_str("\n[[package]]\nname=\"verify-fixture\"\nversion=\"0.1.0\"\n");
+    }
+    lock.push_str("\n[[package]]\nname=\"verify-member\"\nversion=\"0.1.0\"\n");
+    fs::write(project.root.join("Cargo.lock"), lock).unwrap();
+    project
+}
+
+async fn resolver_plan_from_member(project: &TestProject) -> VerifyOutcome {
+    project
+        .service()
+        .execute(
+            request(
+                VerifyAction::MatrixPlan,
+                &project.root.join("member"),
+                RequiredConfigurations {
+                    include_default: true,
+                    include_no_default: false,
+                    include_policy: false,
+                    stages: vec![VerifyStage::Check],
+                    ..Default::default()
+                },
+                check_only_budget(1),
+            ),
+            None,
+            None,
+        )
+        .await
+}
+
+#[tokio::test]
+async fn resolver_defaults_use_root_package_edition_even_when_member_is_newer() {
+    for (edition, expected) in [
+        ("2015", "edition-default (1)"),
+        ("2018", "edition-default (1)"),
+        ("2021", "edition-default (2)"),
+        ("2024", "edition-default (3)"),
+    ] {
+        let manifest = format!(
+            "[package]\nname=\"verify-fixture\"\nversion=\"0.1.0\"\nedition=\"{edition}\"\n[workspace]\nmembers=[\"member\"]\n"
+        );
+        let project = resolver_project(
+            &format!("root-edition-{edition}"),
+            &manifest,
+            "[package]\nname=\"verify-member\"\nversion=\"0.1.0\"\nedition=\"2024\"\n",
+        );
+        let result = resolver_plan_from_member(&project).await;
+        assert_eq!(result.status, "PLANNED", "{result:#?}");
+        assert_eq!(
+            result.resolver, expected,
+            "root edition {edition}: {result:#?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn resolver_explicit_workspace_and_root_package_values_override_edition() {
+    let cases = [
+        (
+            "workspace-override",
+            "[package]\nname=\"verify-fixture\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[workspace]\nmembers=[\"member\"]\nresolver=\"1\"\n",
+            "1",
+        ),
+        (
+            "package-override",
+            "[package]\nname=\"verify-fixture\"\nversion=\"0.1.0\"\nedition=\"2024\"\nresolver=\"2\"\n[workspace]\nmembers=[\"member\"]\n",
+            "2",
+        ),
+        (
+            "virtual-override",
+            "[workspace]\nmembers=[\"member\"]\nresolver=\"3\"\n",
+            "3",
+        ),
+    ];
+    for (label, manifest, expected) in cases {
+        let project = resolver_project(
+            label,
+            manifest,
+            // Cargo ignores a member-local resolver for the workspace. Its
+            // presence must not influence the MCP's reported effective value.
+            "[package]\nname=\"verify-member\"\nversion=\"0.1.0\"\nedition=\"2018\"\nresolver=\"1\"\n",
+        );
+        let result = resolver_plan_from_member(&project).await;
+        assert_eq!(result.status, "PLANNED", "{result:#?}");
+        assert_eq!(result.resolver, expected, "{label}: {result:#?}");
+    }
+}
+
+#[tokio::test]
+async fn resolver_virtual_default_ignores_member_and_workspace_package_editions() {
+    let project = resolver_project(
+        "virtual-default",
+        "[workspace]\nmembers=[\"member\"]\n[workspace.package]\nedition=\"2024\"\n",
+        "[package]\nname=\"verify-member\"\nversion=\"0.1.0\"\nedition.workspace=true\nresolver=\"3\"\n",
+    );
+    let result = resolver_plan_from_member(&project).await;
+    assert_eq!(result.status, "PLANNED", "{result:#?}");
+    assert_eq!(
+        result.resolver, "virtual-workspace-default (1)",
+        "{result:#?}"
+    );
+}
+
+#[tokio::test]
+async fn resolver_root_package_inherited_edition_is_taken_from_cargo_metadata() {
+    let project = resolver_project(
+        "inherited-root-edition",
+        "[package]\nname=\"verify-fixture\"\nversion=\"0.1.0\"\nedition.workspace=true\n[workspace]\nmembers=[\"member\"]\n[workspace.package]\nedition=\"2024\"\n",
+        "[package]\nname=\"verify-member\"\nversion=\"0.1.0\"\nedition=\"2018\"\n",
+    );
+    let result = resolver_plan_from_member(&project).await;
+    assert_eq!(result.status, "PLANNED", "{result:#?}");
+    assert_eq!(result.resolver, "edition-default (3)", "{result:#?}");
+}

@@ -54,17 +54,42 @@ async fn real_rust_analyzer_semantics_are_source_write_free() {
     options.probe_timeout = Duration::from_secs(20);
     let manager = RustAnalyzerManager::new(options).expect("real RA manager");
 
-    let hover = symbol_hover(
-        &manager,
-        &root,
-        Path::new("src/lib.rs"),
-        "answer",
-        Some(1),
-        Duration::from_secs(60),
-    )
+    // LSP initialize acknowledges the session before Cargo project loading is
+    // necessarily complete. The fallback "No hover information for 'answer'"
+    // is not semantic evidence and must not let this smoke advance to rename.
+    let (hover, references) = tokio::time::timeout(Duration::from_secs(60), async {
+        loop {
+            let hover = symbol_hover(
+                &manager,
+                &root,
+                Path::new("src/lib.rs"),
+                "answer",
+                Some(1),
+                Duration::from_secs(60),
+            )
+            .await
+            .expect("real hover");
+            if hover.contains("fn answer(") && hover.contains("u32") {
+                let references = symbol_references(
+                    &manager,
+                    &root,
+                    Path::new("src/lib.rs"),
+                    "answer",
+                    Some(1),
+                    Duration::from_secs(60),
+                )
+                .await
+                .expect("real references");
+                if references.contains("src/lib.rs:1  ") && references.contains("src/lib.rs:7  ") {
+                    break (hover, references);
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    })
     .await
-    .expect("real hover");
-    assert!(hover.contains("answer"), "{hover}");
+    .expect("real semantic hover and references before the project-loading deadline");
+    assert!(hover.contains("fn answer("), "{hover}");
 
     let symbols = document_symbols(
         &manager,
@@ -76,29 +101,20 @@ async fn real_rust_analyzer_semantics_are_source_write_free() {
     .expect("real document symbols");
     assert!(symbols.contains("answer"), "{symbols}");
 
-    let references = symbol_references(
-        &manager,
-        &root,
-        Path::new("src/lib.rs"),
-        "answer",
-        Some(1),
-        Duration::from_secs(60),
-    )
-    .await
-    .expect("real references");
-    assert!(references.contains("rust-analyzer output"), "{references}");
+    assert!(references.contains("src/lib.rs:1  "), "{references}");
+    assert!(references.contains("src/lib.rs:7  "), "{references}");
 
     let definition = symbol_definition(
         &manager,
         &root,
         Path::new("src/lib.rs"),
         "answer",
-        Some(11),
+        Some(7),
         Duration::from_secs(60),
     )
     .await
     .expect("real definition");
-    assert!(definition.contains("rust-analyzer output"), "{definition}");
+    assert!(definition.contains("src/lib.rs:1\n"), "{definition}");
 
     let implementations = symbol_implementations(
         &manager,
