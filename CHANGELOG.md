@@ -26,14 +26,16 @@ Changelog structure.
 - MCP Registry name moved to the new org namespace: `io.github.agzyazilim/rust-mcp`.
 - Generic project-defined validation guidance; Iced-specific notes are no longer
   advertised by default (the legacy resource URI remains readable).
-- Windows joins the mandatory regression matrix. Legacy OpenCode2 compatibility
+- Windows joins the mandatory regression matrix; macOS uses the supported
+  macOS 15 runner. Legacy OpenCode2 compatibility
   is an optional manual CI check, independent of core MCP acceptance.
 - Compatible nextest/sccache patch releases are accepted instead of exact-version gates.
 - Release preflight verifies registry readiness before irreversible crate publication.
 
 ### Fixed
 
-- Updated locked rustls to 0.23.46 for the current dependency policy advisories.
+- Updated locked rustls to 0.23.46, rustls-webpki to 0.103.16, tokio to 1.53.3,
+  and webpki-root-certs to 1.0.10 to resolve dependency-policy advisories.
 - Corrected installation directory and toolchain instructions in English and Turkish.
 - Preserved program arguments after Cargo's separator during authorized execution.
 - Report the workspace root's effective Cargo resolver, including edition 2018

@@ -1,6 +1,6 @@
 //! Real filesystem fixtures exercise the zero-process workspace tools.
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
 };
 
@@ -367,7 +367,7 @@ fn symlink_file_and_directory_are_never_followed() {
     assert!(execute_workspace(&fixture.root(), &input, &CancellationToken::new(), 49_152).is_err());
     input.path = Some("linked-dir/secret.rs".into());
     assert!(execute_workspace(&fixture.root(), &input, &CancellationToken::new(), 49_152).is_err());
-    assert!(Path::new(&outside.0).exists());
+    assert!(outside.0.exists());
 }
 
 #[test]
