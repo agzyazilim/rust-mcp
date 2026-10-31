@@ -5,64 +5,50 @@
 per-OS notes, MCP client configuration, verification, and troubleshooting.
 The next step is the [tool and configuration reference](tools.md).
 
-`agz-rust-mcp` is a standalone stdio MCP server: one executable, launched by
-your MCP client, speaking the Model Context Protocol on stdin/stdout. Every
-method below installs the same `agz-rust-mcp` executable.
+`agz-rust-mcp` is one executable with standard stdio and local Streamable HTTP
+MCP transports. No agent harness, model provider, client plugin, or separate
+skill package is required. Every method below installs the same executable.
 
-## Bundled skills (current source)
+## Built-in skills
 
-Since version `0.4.0`, the server bundles four versioned `SKILL.md` files inside the same
-executable. They work offline and need no separate skill package or MCP server.
-`prompts/list` discovers `workflow`, `repair`, `refactor`, and `performance`;
-`prompts/get` accepts an optional `task` string (bounded to 4,000 sanitized
-characters). `resources/list` exposes the same content under
-`agz-rust-mcp://skills/<skill-name>`. The legacy workflow resource remains an alias.
-Clients decide whether to discover/invoke prompts or filesystem skills; MCP
-resource availability alone does not enable automatic skill selection.
+Four versioned `SKILL.md` files are compiled into the binary and work offline:
+`agz-rust-workflow`, `agz-rust-repair`, `agz-rust-refactor`, and
+`agz-rust-performance`. The content is available immediately after connecting.
 
-For clients that discover filesystem skills, use a `0.4.0` or later binary:
+| MCP interface | Discovery | Read one skill |
+| --- | --- | --- |
+| Tools, including tools-only clients | `workspace(action="skills")` | `workspace(action="skills", skill="agz-rust-workflow")` |
+| Prompts | `prompts/list` | `prompts/get` with `name="workflow"` |
+| Resources | `resources/list` | `resources/read` with `uri="agz-rust-mcp://skills/agz-rust-workflow"` |
+
+The tool accepts the full skill name or its short prompt name (`workflow`,
+`repair`, `refactor`, `performance`). Its catalog includes version and SHA-256
+metadata; selected content supports `line`, `lineCount`, and `byteBudget` paging.
+A skill read does not require project roots or start Cargo/Rust Analyzer. MCP
+prompts accept an optional `task` string bounded to 4,000 sanitized characters.
+Clients control when guidance is selected; supporting MCP resources does not
+imply that a client automatically invokes them.
+
+CLI inspection and export are optional:
 
 ```bash
 agz-rust-mcp skills list
 agz-rust-mcp skills show agz-rust-workflow
-# Existing trusted parent; destination must NOT exist:
+# Existing trusted parent; destination must not exist:
 agz-rust-mcp skills export --dir /path/to/new-skills
 ```
 
-The destination contains `agz-rust-workflow`, `agz-rust-repair`,
-`agz-rust-refactor`, and `agz-rust-performance`, each with one `SKILL.md`.
-Choose the client's supported skill directory as the new destination, or copy
-the selected skill folders into its existing directory after review. Export
-refuses existing destinations, never replaces custom skills, and reports any
-partial output on failure. These CLI commands do not start MCP/Cargo, read server
-configuration or change client settings. With no subcommand the binary remains
-the normal stdio server. Skills use the connected server's discovered tools;
-Rust/Cargo and optional adapters remain local executable prerequisites.
-
-
-### Filesystem delivery to each client
-
-Installing the executable does not automatically write
-skill files into client configuration directories. MCP prompts/resources are
-available immediately; native skill discovery needs the four exported folders.
-Export once to a new temporary directory, then copy the selected folders without
-replacing an existing customized skill:
-
-| Client | User skill directory |
-| --- | --- |
-| Codex | `~/.codex/skills/<skill-name>/SKILL.md` |
-| OpenCode / OpenCode2 | `~/.config/opencode/skills/<skill-name>/SKILL.md` |
-| ZCode | `~/.zcode/skills/<skill-name>/SKILL.md` |
-
-Verify the client's skill inventory after installation. Updating the binary
-updates its embedded prompts/resources; exported files need an explicit refresh.
-The installer does not overwrite user skill instructions in the background.
+Export creates one folder and `SKILL.md` per skill, refuses existing destinations,
+and reports partial output on failure. It does not change client settings or
+install into any client's configuration directory. These CLI commands do not
+start MCP/Cargo or load server configuration. Updating the binary updates its
+embedded guidance; an earlier export is a snapshot and needs an explicit refresh.
 
 ## Requirements
 
 - Linux, macOS, or Windows on x86_64, or macOS on arm64.
-- Any client that can launch a local stdio MCP server.
-- Rust `1.88.0` or newer to compile this server through `cargo install` or from source.
+- A client supporting local stdio MCP or local Streamable HTTP MCP.
+- Rust `1.91.0` or newer to compile this server through `cargo install` or from source.
 - Cargo and the target project's Rust toolchain for metadata, compiler diagnostics,
   test execution, and binary/example execution, including with a prebuilt server.
 - Rust Analyzer only for semantic navigation and edit proposals. Nextest and
@@ -94,11 +80,11 @@ release page instead. Environment overrides:
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `AGZ_RUST_MCP_VERSION` | installer release version (`0.5.0` in this source) | Exact version to install. |
+| `AGZ_RUST_MCP_VERSION` | installer release version (`0.6.0` in this source) | Exact version to install. |
 | `AGZ_RUST_MCP_INSTALL_DIR` | `$HOME/.local/bin` | Absolute install directory. |
 
 ```bash
-AGZ_RUST_MCP_VERSION=0.5.0 AGZ_RUST_MCP_INSTALL_DIR="$HOME/.local/bin" bash install.sh
+AGZ_RUST_MCP_VERSION=0.6.0 AGZ_RUST_MCP_INSTALL_DIR="$HOME/.local/bin" bash install.sh
 ```
 
 The installer also verifies the archive layout and the extracted binary's
@@ -163,16 +149,16 @@ Do not proceed if verification fails.
 
 ## 3. crates.io (`cargo install`)
 
-Requires Rust `1.88.0` or newer:
+Requires Rust `1.91.0` or newer:
 
 ```bash
-rustup toolchain install 1.88.0
+rustup toolchain install 1.91.0
 cargo install agz-rust-mcp --locked
 agz-rust-mcp --version
 ```
 
 `--locked` builds with the exact dependency versions recorded in `Cargo.lock`.
-Pin a release with `cargo install agz-rust-mcp --version 0.5.0 --locked`.
+Pin a release with `cargo install agz-rust-mcp --version 0.6.0 --locked`.
 Cargo installs to `$HOME/.cargo/bin` (`%USERPROFILE%\.cargo\bin` on Windows);
 ensure that directory is on `PATH`.
 
@@ -181,11 +167,11 @@ ensure that directory is on `PATH`.
 ```bash
 git clone https://github.com/agzyazilim/rust-mcp
 cd rust-mcp
-cargo +1.88.0 build --release -p agz-rust-mcp --locked
+cargo +1.91.0 build --release -p agz-rust-mcp --locked
 ./target/release/agz-rust-mcp --version
 ```
 
-MSRV is Rust `1.88.0` with edition 2024; `rust-toolchain.toml` pins the toolchain
+MSRV is Rust `1.91.0` with edition 2024; `rust-toolchain.toml` pins the toolchain
 used by CI. Copy `target/release/agz-rust-mcp` (`.exe` on Windows) to a directory
 on `PATH`, or point the client at its absolute path. See
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the full development gate.
@@ -202,161 +188,98 @@ on `PATH`, or point the client at its absolute path. See
 
 ## MCP Client Setup
 
-Before connecting the client, install the release as described above and run
-`agz-rust-mcp --version` once to verify the executable. `AGZ_RUST_MCP_BIN` is an
-explicit local override and intentionally bypasses automatic PATH selection;
-unset it when verifying the published release.
+Check `agz-rust-mcp --version` before connecting. Use an absolute binary path when
+the client's `PATH` differs from your development shell, and give the server
+access to the project's Rust/Cargo toolchain. The invocation fields below are
+adapted to the client's own configuration format; they are not a universal
+client configuration file.
 
-### Client-independent invocation
-
-Configure a local stdio server with the following command and arguments, using
-your client's own configuration format:
+### Stdio
 
 ```json
 {
   "command": "agz-rust-mcp",
-  "args": ["--allow-root", "/absolute/path/to/project"]
+  "args": ["--allow-root", "/absolute/path/to/project"],
+  "env": {"AGZ_RUST_MCP_SERVER__TOOLSET": "core"}
 }
 ```
 
-The descriptor above is the server invocation, not a universal client config
-file. Give the client access to the same Rust/Cargo `PATH` as your development
-shell. No model API key, OpenCode installation, or project-specific framework is
-required by the server. Start with the default tool configuration; add optional
-adapters only when the workflow needs them.
+Stdio is the default. The client starts the process and exchanges newline-delimited
+JSON-RPC on stdin/stdout. Diagnostics go to stderr. No shell wrapper or model API
+key is required.
 
-For a smaller daily-work catalog, append `"--toolset", "core"` to the arguments.
-The core catalog contains exactly `workspace`, `test`, `run`, `check`,
-`crate_lookup`, and `docs`. The default `full` catalog retains the advanced
-context, semantic, repair, and profiling tools for existing clients. Select the
-same setting with `AGZ_RUST_MCP_SERVER__TOOLSET=core`, or in the server's TOML:
+### Streamable HTTP
+
+Start the process separately:
+
+```bash
+agz-rust-mcp --transport http --http-bind 127.0.0.1:8787 \
+  --allow-root /absolute/path/to/project
+```
+
+Configure the client's Streamable HTTP connection with:
+
+```json
+{
+  "url": "http://127.0.0.1:8787/mcp"
+}
+```
+
+The same endpoint supports `2025-11-25` session clients and the stateless
+`2026-07-28` protocol. Binding is restricted to loopback addresses; a local native
+client connects directly. HTTP requests with an `Origin` header are rejected,
+and `Host` must match the listener address or `localhost` with its port. Browser
+page scripts therefore cannot call this local service directly.
+
+One server process is one trusted user's workspace domain: changes, capsules,
+and tasks share its configured access and lifetime. Remote use requires an
+authenticated HTTPS proxy that rewrites `Host` to the loopback listener; use a
+separate server process for each security principal. No HTTP-to-stdio bridge is
+needed.
+
+The server's TOML configuration can express the same settings:
 
 ```toml
 [server]
+transport = "http"
+http_bind = "127.0.0.1:8787"
+allow_roots = ["/absolute/path/to/project"]
 toolset = "core"
 ```
 
-Explicit tool enable/disable settings can further restrict the selected catalog;
-they do not add advanced tools to `core`. Reload the server after changing the
-catalog so the client refreshes its discovered tools.
+Load it with `agz-rust-mcp --config /absolute/path/to/server.toml`. CLI flags take
+precedence over `AGZ_RUST_MCP_*` environment variables, then explicit TOML, then
+defaults. Environment equivalents are `AGZ_RUST_MCP_SERVER__TRANSPORT=http` and
+`AGZ_RUST_MCP_SERVER__HTTP_BIND=127.0.0.1:8787`.
 
-### Multiple checkouts, worktrees and package subdirectories
+### Tool catalog and project roots
 
-The server is not tied to one Git branch. Supply an absolute `dir` for the
-repository root, package/source subdirectory or linked worktree in each call.
-Configure their common project parent once using `--allow-root`, plus any other
-worktree location (for example a client's dedicated worktrees directory).
-Shared path dependencies outside the selected worktree need an explicit
-`--allow-dependency-root`. Example server arguments, with your own paths:
+The compact `core` catalog contains `workspace`, `test`, `run`, `check`,
+`crate_lookup`, and `docs`. Select it with `--toolset core` or
+`AGZ_RUST_MCP_SERVER__TOOLSET=core`. The default `full` catalog also exposes the
+advanced semantic, change, repair, verification, and profiling tools. Explicit
+tool enable/disable settings further restrict the selected catalog; they do not
+add advanced tools to `core`. Restart the server after changing its catalog.
+
+The canonical working directory is the default authorized root. For additional
+checkouts or worktrees, pass repeated `--allow-root` arguments and use an absolute
+`dir` in each tool call. External path dependencies need an explicit
+`--allow-dependency-root`. For example:
 
 ```text
 --allow-root /projects --allow-root /client-worktrees --allow-dependency-root /projects
 ```
 
-These are explicit local trust boundaries; MCP client roots may narrow them.
-The current source discovers inherited workspace dependencies from member/source
-directories and binds external dependency inputs to the selected worktree, not
-the broad configured parent. Different checkouts retain separate cache keys.
-In auto cache mode an unsafe/external project target falls back to an isolated
-target; project-only mode still requires a safe in-workspace target. A missing
-directory or inaccessible dependency produces a bounded reason, not a pass.
+Client-provided MCP roots can narrow configured access but never widen it.
+Dependencies inherited from member/source directories resolve against the
+selected workspace. Different checkouts retain separate cache keys. Unsafe or
+external project target directories fall back to an isolated target in auto
+cache mode; project-only mode requires a safe in-workspace target. Missing or
+inaccessible inputs return a bounded reason, not a passing verdict.
 
-`agz-rust-mcp` is a standalone stdio server; any MCP-capable client can run it.
-The canonical current directory is the default authorized root. Add explicit
-roots with repeated `--allow-root <path>` arguments when the client starts
-elsewhere. Client-provided MCP roots may narrow configured access but never
-widen it.
-
-### ZCode (`~/.zcode/cli/config.json`)
-
-Add this server to the existing `mcp.servers` object. For one project, use
-`.zcode/config.json` in that project instead. These are ZCode's native paths;
-its user file has an extra `cli/` directory.
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "rust": {
-        "command": "agz-rust-mcp",
-        "args": []
-      }
-    }
-  }
-}
-```
-
-The Settings → MCP Servers page also accepts this entry. Preserve existing
-servers. `.agents/mcp.json` is only a fallback when the same scope has no native
-ZCode servers; prefer the native file to avoid an existing server hiding it.
-See [ZCode's MCP documentation](https://zcode.z.ai/en/docs/mcp-services).
-
-### OpenCode (`opencode.jsonc`)
-
-Current OpenCode uses `mcp.rust`, with an array command and numeric timeout:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "rust": {
-      "type": "local",
-      "command": ["agz-rust-mcp"],
-      "enabled": true,
-      "timeout": 120000
-    }
-  }
-}
-```
-
-Use `~/.config/opencode/opencode.json` for a user-wide configuration, or
-`opencode.jsonc` in the project. See
-[OpenCode's MCP documentation](https://opencode.ai/docs/mcp-servers/).
-The OpenCode2 example below uses a different grouped configuration; choose the
-format your installed client accepts.
-
-<a id="opencode2-opencodejsonc"></a>
-
-### Legacy OpenCode2 (`opencode.jsonc`)
-
-This example is retained for the pinned legacy adapter. Its optional
-compatibility smoke is separate from the core MCP release gates.
-
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "mcp": {
-    "servers": {
-      "rust": {
-        "type": "local",
-        "command": ["agz-rust-mcp"],
-        "cwd": ".",
-        "codemode": false,
-        "timeout": {
-          "startup": 120000,
-          "catalog": 30000,
-          "execution": 720000
-        }
-      }
-    }
-  }
-}
-```
-
-### Codex (`~/.codex/config.toml`)
-
-```toml
-[mcp_servers.rust]
-command = "agz-rust-mcp"
-args = []
-```
-
-Use an absolute path if the client's `PATH` differs from your shell's. Restart
-or reload the client after editing its configuration.
-
-Configuration precedence is CLI flags, then `AGZ_RUST_MCP_*` environment
-variables, then `--config` TOML, then defaults; the complete key reference is in
-[docs/tools.md](tools.md#configuration-reference).
+Use the exact tool names from `tools/list`; any namespace displayed by the
+client belongs to that client. See the [configuration reference](tools.md#configuration-reference)
+for all settings and their defaults.
 
 ## Verification
 
@@ -405,7 +328,7 @@ multi-package workspace:
 | Retrieve dependency evidence | `crate_lookup`, `docs`, or `context` | Evidence tied to the actual dependency version and source. |
 | List and isolate a regression test | `test` → `list`, then `run` | Selected test names and fresh test results. Use an exact name when appropriate. |
 | Compile tests without running them | `test` → `compile` | Compilation evidence only. |
-| Exercise a function through its harness | `run` with an explicit binary/example target | Exit status, bounded output, timing, and cleanup status. |
+| Exercise a function through a test/example | `run` with an explicit binary/example target | Exit status, bounded output, timing, and cleanup status. |
 
 Plain Rust functions need a test, example, or binary entry point to execute.
 The `run` tool accepts a Cargo target and structured arguments; it does not take
@@ -422,10 +345,12 @@ a result with no matching tests is not a passing regression test.
 | `agz-rust-mcp: command not found` | Add the install directory (`$HOME/.local/bin` or `$HOME/.cargo/bin`) to `PATH`, or use an absolute path in the client config. |
 | Checksum mismatch | Re-download the archive and its `.sha256` from the release page; do not bypass verification. |
 | Installer rejects the OS or architecture | `install.sh` supports Linux x86_64 only; use a prebuilt archive, `cargo install`, or a source build. |
-| Client shows no tools | Verify the client's `PATH`, use an absolute binary path, and allow enough startup timeout. |
+| Client shows no tools | For stdio, verify the binary path and startup timeout. For HTTP, confirm the server is running and use the `/mcp` URL. |
+| HTTP address rejected | `--http-bind` must be a loopback address, for example `127.0.0.1:8787` or `[::1]:8787`. |
+| Client has no prompt/resource browser | Read guidance through `workspace(action="skills")`; no filesystem skill installation is required. |
 | Path or root authorization errors | Start the client in the workspace or pass repeated `--allow-root <path>` flags. |
-| Semantic tools return unavailable | Install the pinned Rust Analyzer (`rustup component add rust-analyzer --toolchain 1.88.0`) and review the workspace-code policy in [docs/tools.md](tools.md#rust-analyzer-policy). |
-| `cargo install` fails on an old toolchain | Install Rust `1.88.0` or newer with `rustup toolchain install 1.88.0`. |
+| Semantic tools return unavailable | Install the pinned Rust Analyzer (`rustup component add rust-analyzer --toolchain 1.91.0`) and review the workspace-code policy in [docs/tools.md](tools.md#rust-analyzer-policy). |
+| `cargo install` fails on an old toolchain | Install Rust `1.91.0` or newer with `rustup toolchain install 1.91.0`. |
 
 Related: [documentation index](README.md) - [tool reference](tools.md) -
 [architecture](architecture.md) - [security policy](../SECURITY.md).

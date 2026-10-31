@@ -259,10 +259,10 @@ impl fmt::Debug for JobState {
 
 impl JobState {
     fn cancel(&self, reason: CancelReason) {
-        if let Ok(mut current) = self.cancel_reason.lock() {
-            if current.is_none() {
-                *current = Some(reason);
-            }
+        if let Ok(mut current) = self.cancel_reason.lock()
+            && current.is_none()
+        {
+            *current = Some(reason);
         }
         self.cancellation.cancel();
     }

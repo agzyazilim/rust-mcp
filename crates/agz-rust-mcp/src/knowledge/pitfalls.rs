@@ -72,10 +72,6 @@ pub struct PitfallDefinition {
     pub severity: Severity,
 }
 
-pub type AuditPattern = PitfallDefinition;
-pub type AuditPatternId = PatternId;
-pub type AuditSeverity = Severity;
-
 /// Advisory metadata is deliberately data-only; source text never enters this table.
 pub const AUDIT_PATTERNS: &[PitfallDefinition] = &[
     PitfallDefinition {
@@ -147,10 +143,4 @@ pub fn pattern_by_id(id: PatternId) -> &'static PitfallDefinition {
         .iter()
         .find(|pattern| pattern.id == id)
         .unwrap_or(&AUDIT_PATTERNS[0])
-}
-
-pub fn pattern_by_name(name: &str) -> Option<&'static PitfallDefinition> {
-    AUDIT_PATTERNS
-        .iter()
-        .find(|pattern| pattern.id.as_str() == name)
 }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::Write as _,
@@ -117,6 +115,8 @@ pub struct AdapterTrialOutput {
 /// deliberately absent from this contract.
 pub trait TaskBenchmarkAdapter: Send + Sync {
     fn arm(&self) -> BenchmarkArm;
+    /// # Errors
+    /// Returns an error if the adapter cannot execute the bounded public trial request.
     fn run_trial(
         &self,
         request: &TaskTrialRequest,
@@ -127,6 +127,8 @@ pub trait TaskBenchmarkAdapter: Send + Sync {
 /// Success is owned by an independent oracle. Live implementations can inject
 /// hidden checks around the returned candidate without exposing them to agents.
 pub trait TaskBenchmarkOracle: Send + Sync {
+    /// # Errors
+    /// Returns an error if independent candidate validation cannot be completed.
     fn evaluate(
         &self,
         request: &TaskTrialRequest,
@@ -390,6 +392,9 @@ impl TaskBenchmarkOracle for ReplayOracle<'_> {
     }
 }
 
+///
+/// # Errors
+/// Returns an error if replay evaluation fails or evidence cannot be published safely.
 pub async fn run(root: &Path) -> Result<()> {
     let evidence = evaluate_provider_free_replay(root).await?;
     let run = json!({
@@ -425,6 +430,9 @@ pub async fn run(root: &Path) -> Result<()> {
 }
 
 #[allow(clippy::too_many_lines, clippy::unused_async)]
+///
+/// # Errors
+/// Returns an error if corpus hashes, replay completeness, independent scoring, or comparison gates fail.
 pub async fn evaluate_provider_free_replay(root: &Path) -> Result<TaskBenchmarkEvidence> {
     let root = fs::canonicalize(root).context("canonicalize benchmark root")?;
     let (fixtures, fixture_bytes) = read_json::<FixtureCatalog>(&root, FIXTURES_PATH)?;
@@ -576,7 +584,7 @@ fn validate_fixture_contract<'a>(
     {
         bail!("frozen corpus identity or fixture binding drift");
     }
-    if manifest.repetitions < 3 || manifest.repetitions % 3 != 0 {
+    if manifest.repetitions < 3 || !manifest.repetitions.is_multiple_of(3) {
         bail!("benchmark needs paired repetitions in multiples of three");
     }
     if manifest
@@ -626,7 +634,7 @@ fn validate_fixture_contract<'a>(
         fixture_digest.update(hash.as_bytes());
         fixture_digest.update([0]);
     }
-    if format!("{:x}", fixture_digest.finalize()) != manifest.fixture_set_hash {
+    if hex::encode(fixture_digest.finalize()) != manifest.fixture_set_hash {
         bail!("fixture set hash drift");
     }
     if manifest.quality_gate.baseline_arm != "mcp_0_2_0"
@@ -1160,7 +1168,7 @@ fn fixture_hash(files: &BTreeMap<String, String>) -> String {
         hasher.update(content.as_bytes());
         hasher.update([0]);
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn validate_relative_path(value: &str) -> Result<()> {
@@ -1176,7 +1184,7 @@ fn validate_relative_path(value: &str) -> Result<()> {
 }
 
 fn sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 fn count_u32(value: usize) -> Result<u32> {

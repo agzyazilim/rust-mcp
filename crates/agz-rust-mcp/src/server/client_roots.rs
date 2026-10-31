@@ -17,6 +17,7 @@ type RootFetch = futures::future::Shared<BoxFuture<'static, RootFetchResult>>;
 
 struct RootEpochState {
     epoch: u64,
+    authority_epoch: Option<u64>,
     cached: Option<RootFetchResult>,
     in_flight: Option<RootFetch>,
     cancellation: CancellationToken,
@@ -26,6 +27,7 @@ impl RootEpochState {
     fn new() -> Self {
         Self {
             epoch: 0,
+            authority_epoch: None,
             cached: None,
             in_flight: None,
             cancellation: CancellationToken::new(),
@@ -94,7 +96,15 @@ impl ClientRootsCoordinator {
         } else {
             (ClientRoots::unsupported(), self.epoch_cancellation().await)
         };
+        // Serialize authority registration with roots/list_changed. A fetch
+        // from the previous epoch must not recreate a revoked snapshot after
+        // invalidation, even when the notification races its final result.
+        let mut state = self.state.lock().await;
+        if epoch_cancellation.is_cancelled() {
+            return Err(RootError::ClientRootsUnavailable);
+        }
         let snapshot = self.guard.snapshot(client_roots.clone())?;
+        state.authority_epoch = Some(snapshot.epoch());
         let root = snapshot.select(directory)?;
         Ok(WorkspaceRequest {
             root,
@@ -104,15 +114,16 @@ impl ClientRootsCoordinator {
     }
 
     pub(crate) async fn invalidate(&self) {
-        let old_cancellation = {
-            let mut state = self.state.lock().await;
-            state.epoch = state.epoch.saturating_add(1);
-            state.cached = None;
-            state.in_flight = None;
-            std::mem::replace(&mut state.cancellation, CancellationToken::new())
-        };
+        let mut state = self.state.lock().await;
+        state.epoch = state.epoch.saturating_add(1);
+        state.cached = None;
+        state.in_flight = None;
+        let old_cancellation = std::mem::replace(&mut state.cancellation, CancellationToken::new());
         old_cancellation.cancel();
-        if let Err(error) = self.guard.invalidate_client_roots() {
+        if let Err(error) = self
+            .guard
+            .invalidate_client_scope(state.authority_epoch.take())
+        {
             tracing::warn!(%error, "could not invalidate client roots snapshot");
         }
     }

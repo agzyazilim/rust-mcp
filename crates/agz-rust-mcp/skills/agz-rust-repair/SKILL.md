@@ -5,7 +5,11 @@ description: Diagnose and repair Rust compiler failures with AGZ Rust MCP, prese
 
 # Compiler-driven repair
 
-Use the connected AGZ Rust MCP with the active checkout's absolute `dir`.
+Discover the connected AGZ Rust MCP's available tools once; client prefixes vary.
+Use the active checkout's absolute `dir` for project operations. The core catalog
+supports workspace/check/test/run/docs/crate_lookup; use advanced tools below
+only when they are exposed. With core, gather bounded source using workspace
+search/read, apply the caller's focused edit, then check and run a relevant test.
 Start from the failed check's code, primary span, message and recorded options.
 Use `check(options={"context":true})` when fresh diagnostics or source context
 are missing. Prefer compact output; request more detail for an omitted relevant
@@ -18,7 +22,7 @@ toolchain-specific target directory through the approved Cargo runner. Preserve
 existing build artifacts and dependencies; do not clean or upgrade by reflex.
 
 For ownership/lifetime errors, inspect the producer and consumer contract before
-adding clones, allocation or synchronization. Use `explain` for a specific trait,
+adding clones, allocation or synchronization. Use `explain`, when available, for a specific trait,
 macro or cfg question and `docs` for the exact resolved dependency API. Analyzer
 unavailability must not be reported as evidence that a symbol/API is absent.
 

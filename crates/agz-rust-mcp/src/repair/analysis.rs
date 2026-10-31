@@ -251,10 +251,9 @@ fn moved_symbol(message: &str) -> Option<String> {
         if let Some(rest) = message
             .find(prefix)
             .map(|index| &message[index + prefix.len()..])
+            && let Some(symbol) = first_backticked(rest)
         {
-            if let Some(symbol) = first_backticked(rest) {
-                return Some(symbol);
-            }
+            return Some(symbol);
         }
     }
     if message.contains("moved") {
@@ -801,7 +800,7 @@ pub(crate) fn candidate_hash(patches: &[PatchInput]) -> String {
         hasher.update(new_string.as_bytes());
         hasher.update(b"\0");
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 /// Converts wire patches into domain patch inputs.

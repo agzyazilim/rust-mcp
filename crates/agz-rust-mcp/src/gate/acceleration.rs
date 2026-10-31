@@ -156,7 +156,7 @@ impl SccacheSession {
             &supervisor,
             &wrapper,
             &["--version"],
-            "sccache 0.17.0",
+            "sccache 0.19.0",
             root.clone(),
             environment,
             deadline,
@@ -285,27 +285,27 @@ mod version_tests {
     #[test]
     fn optional_tools_accept_compatible_releases_without_an_exact_patch_pin() {
         assert!(compatible_version(
-            "cargo-nextest 0.9.143",
-            "cargo-nextest 0.9.143"
+            "cargo-nextest 0.9.150",
+            "cargo-nextest 0.9.150"
         ));
         assert!(compatible_version(
             "cargo-nextest 0.9.150 (hash 2026-10-01)",
-            "cargo-nextest 0.9.143"
+            "cargo-nextest 0.9.150"
         ));
-        assert!(compatible_version("sccache 0.17.1", "sccache 0.17.0"));
+        assert!(compatible_version("sccache 0.19.1", "sccache 0.19.0"));
         for invalid in [
             "cargo-nextest 0.9.142",
             "cargo-nextest 0.10.0",
             "cargo-nextest 1.0.0",
-            "cargo-nextest 0.9.143-beta",
-            "cargo-nextest 0.9.143.fake",
-            "cargo-nextest 0.9.143 fake",
-            "cargo-nextest 00.9.143",
-            "fake-nextest 0.9.143",
-            "cargo-nextest 0.9.143 (fake) extra",
+            "cargo-nextest 0.9.150-beta",
+            "cargo-nextest 0.9.150.fake",
+            "cargo-nextest 0.9.150 fake",
+            "cargo-nextest 00.9.150",
+            "fake-nextest 0.9.150",
+            "cargo-nextest 0.9.150 (fake) extra",
         ] {
             assert!(
-                !compatible_version(invalid, "cargo-nextest 0.9.143"),
+                !compatible_version(invalid, "cargo-nextest 0.9.150"),
                 "{invalid}"
             );
         }

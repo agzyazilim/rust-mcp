@@ -334,12 +334,11 @@ fn resolve_edit(
     if edit.byte_start.is_some() != edit.byte_end.is_some() {
         return Err("the compiler supplied only half of a byte range".to_owned());
     }
-    if let (Some(byte_start), Some(byte_end)) = (edit.byte_start, edit.byte_end) {
-        if usize::try_from(byte_start).ok() != Some(start)
-            || usize::try_from(byte_end).ok() != Some(end)
-        {
-            return Err("the compiler byte range does not match the source snapshot".to_owned());
-        }
+    if let (Some(byte_start), Some(byte_end)) = (edit.byte_start, edit.byte_end)
+        && (usize::try_from(byte_start).ok() != Some(start)
+            || usize::try_from(byte_end).ok() != Some(end))
+    {
+        return Err("the compiler byte range does not match the source snapshot".to_owned());
     }
     Ok(ResolvedEdit {
         group,

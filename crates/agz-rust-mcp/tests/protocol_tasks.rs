@@ -4,7 +4,7 @@ use rmcp::{
     ClientLifecycleMode, ClientServiceExt, ServiceExt,
     model::{
         CallToolRequestParams, CallToolResponse, CallToolResult, CancelTaskParams,
-        ClientCapabilities, ClientInfo, GetTaskParams, Implementation, ProtocolVersion,
+        ClientCapabilities, ClientConfig, GetTaskParams, Implementation, ProtocolVersion,
         TaskPayload, TaskStatus,
     },
 };
@@ -91,8 +91,8 @@ fn spawn_local_docs_server(
     (client_transport, task)
 }
 
-fn client_info(capabilities: ClientCapabilities) -> ClientInfo {
-    ClientInfo::new(
+fn client_info(capabilities: ClientCapabilities) -> ClientConfig {
+    ClientConfig::new(
         capabilities,
         Implementation::new("agz-rust-mcp-task-test", "0.1.0"),
     )

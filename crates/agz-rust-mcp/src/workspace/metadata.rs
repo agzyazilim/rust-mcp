@@ -649,10 +649,10 @@ impl<R: MetadataRunner> MetadataService<R> {
             control,
             authorized_execution,
         );
-        if result.is_ok() {
-            if let Err(error) = checkpoint(control) {
-                result = Err(error);
-            }
+        if result.is_ok()
+            && let Err(error) = checkpoint(control)
+        {
+            result = Err(error);
         }
         if result.is_ok() {
             // Do not publish a snapshot under a key captured before a target
@@ -724,7 +724,7 @@ impl<R: MetadataRunner> MetadataService<R> {
     pub fn is_current(&self, snapshot: &WorkspaceSnapshot) -> Result<bool, MetadataError> {
         Ok(
             self.generation(&snapshot.package_root)? == snapshot.generation
-                && self.guard.current_epoch()? == snapshot.epoch,
+                && self.guard.is_epoch_current(snapshot.epoch)?,
         )
     }
 
@@ -947,9 +947,11 @@ impl<R: MetadataRunner> MetadataService<R> {
     }
 
     fn check_epoch(&self, expected: u64) -> Result<(), MetadataError> {
-        let actual = self.guard.current_epoch()?;
-        if actual != expected {
-            return Err(MetadataError::RootEpochChanged { expected, actual });
+        if !self.guard.is_epoch_current(expected)? {
+            return Err(MetadataError::RootEpochChanged {
+                expected,
+                actual: self.guard.current_epoch()?,
+            });
         }
         Ok(())
     }

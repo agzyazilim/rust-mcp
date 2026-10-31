@@ -8,9 +8,9 @@ Cargo and rustc remain the authority; Rust Analyzer and static audit results are
 advisory.
 
 - MCP Registry name: `mcp-name: io.github.agzyazilim/rust-mcp`
-- Version: `0.5.0`
-- MSRV: Rust `1.88.0`
-- Transport: stdio
+- Version: `0.6.0`
+- MSRV: Rust `1.91.0`
+- Transports: stdio (default), local Streamable HTTP
 
 ```bash
 cargo install agz-rust-mcp --locked
@@ -31,12 +31,24 @@ evidence and type-checks candidate snippets only in a discarded candidate copy.
 The `change` tool keeps a revision-bound candidate copy with validation evidence
 and never writes workspace source.
 
-The current source also bundles `agz-rust-workflow`, `agz-rust-repair`,
-`agz-rust-refactor`, and `agz-rust-performance` as offline MCP prompts/resources.
-Use `agz-rust-mcp skills list`, `skills show <name>`, or
-`skills export --dir <new-directory>` for filesystem-based skill discovery.
-Export never replaces an existing directory. Bundled skills are available from
-`0.4.0` and are not present in `0.3.0` binaries.
+Four offline skills are embedded in the executable: `agz-rust-workflow`,
+`agz-rust-repair`, `agz-rust-refactor`, and `agz-rust-performance`. Read them with
+`workspace(action="skills")` / `workspace(action="skills", skill="workflow")`,
+standard MCP prompts, or `agz-rust-mcp://skills/<skill-name>` resources. Tools-only
+clients get the same complete instructions; no client-specific skill installer
+is required. Optional `skills list`, `skills show <name>`, and
+`skills export --dir <new-directory>` CLI commands provide local inspection and
+export. Export never replaces an existing directory.
+
+For a local HTTP client, run:
+
+```bash
+agz-rust-mcp --transport http --http-bind 127.0.0.1:8787 \
+  --allow-root /absolute/path/to/project
+```
+
+Connect to `http://127.0.0.1:8787/mcp`. The listener accepts loopback addresses
+only; stdio remains the default. Both transports use the same MCP tool contract.
 
 See the [project repository](https://github.com/agzyazilim/rust-mcp)
 for client configuration, security boundaries, and release artifacts.

@@ -13,7 +13,7 @@ use anyhow::{Context, Result};
 use rmcp::{
     ClientLifecycleMode, ClientServiceExt, ServiceError, ServiceExt,
     model::{
-        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientInfo, ErrorCode,
+        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientConfig, ErrorCode,
         GetPromptRequestParams, GetPromptResponse, Implementation, ProtocolVersion,
         ReadResourceRequestParams, ReadResourceResponse,
     },
@@ -49,6 +49,7 @@ fn fixture_config() -> (Config, IsolatedState) {
     config.gate.cache_dir = state.join("gate");
     config.gate.lease_dir = state.join("leases");
     config.docs.cache_dir = state.join("docs");
+    config.change.scratch_dir = state.join("change");
     config.telemetry.enabled = false;
     config.telemetry.path = state.join("activity.jsonl");
     (config, IsolatedState(state))
@@ -64,8 +65,8 @@ fn spawn_server(config: Config) -> (tokio::io::DuplexStream, tokio::task::JoinHa
     (client_transport, task)
 }
 
-fn client_info(capabilities: ClientCapabilities) -> ClientInfo {
-    ClientInfo::new(
+fn client_info(capabilities: ClientCapabilities) -> ClientConfig {
+    ClientConfig::new(
         capabilities,
         Implementation::new("agz-rust-mcp-test", "0.1.0"),
     )
@@ -158,12 +159,6 @@ async fn initialize_lists_the_static_surface_and_guidance() -> Result<()> {
             skill.markdown
         );
     }
-    let prompt = client
-        .peer()
-        .get_prompt_once(GetPromptRequestParams::new("workflow"))
-        .await?;
-    assert!(matches!(prompt, GetPromptResponse::Complete(_)));
-
     let resources = client.peer().list_resources(None).await?;
     assert_eq!(resources.resources.len(), 7);
     assert!(
@@ -177,6 +172,54 @@ async fn initialize_lists_the_static_surface_and_guidance() -> Result<()> {
         .read_resource_once(ReadResourceRequestParams::new("agz-rust-mcp://workflow"))
         .await?;
     assert!(matches!(resource, ReadResourceResponse::Complete(_)));
+    assert!(
+        client
+            .peer()
+            .read_resource_once(ReadResourceRequestParams::new("agz-rust-mcp://iced"))
+            .await
+            .is_err()
+    );
+
+    let task = "Preserve the parser's error details.\nRun the selected test.\tReport coverage.";
+    let task_prompt = client
+        .peer()
+        .get_prompt_once(
+            GetPromptRequestParams::new("repair").with_arguments(
+                serde_json::json!({"task":task})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+        )
+        .await?;
+    let GetPromptResponse::Complete(task_prompt) = task_prompt else {
+        anyhow::bail!("static skill prompt did not complete");
+    };
+    assert_eq!(
+        serde_json::to_value(task_prompt)?["messages"][0]["content"]["text"],
+        format!(
+            "{}\n\nTask:\n{task}",
+            agz_rust_mcp::skills::BUNDLED_SKILLS[1].markdown
+        )
+    );
+    for arguments in [
+        serde_json::json!({"task":""}),
+        serde_json::json!({"task":false}),
+        serde_json::json!({"task":"x".repeat(4001)}),
+        serde_json::json!({"task":"task\u{001b}[31m"}),
+        serde_json::json!({"task":"valid", "unknown":true}),
+    ] {
+        assert!(
+            client
+                .peer()
+                .get_prompt_once(
+                    GetPromptRequestParams::new("workflow")
+                        .with_arguments(arguments.as_object().unwrap().clone())
+                )
+                .await
+                .is_err()
+        );
+    }
 
     let result = client
         .call_tool_once(CallToolRequestParams::new("check"))

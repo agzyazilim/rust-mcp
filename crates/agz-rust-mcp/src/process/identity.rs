@@ -119,7 +119,7 @@ pub(crate) fn command_hash(executable: &Path, args: &[OsString]) -> String {
         hash.update([0]);
         update_os(&mut hash, argument.as_os_str());
     }
-    format!("{:x}", hash.finalize())
+    hex::encode(hash.finalize())
 }
 
 pub(crate) fn command_hash_bytes(executable: &Path, args: &[Vec<u8>]) -> String {
@@ -130,7 +130,7 @@ pub(crate) fn command_hash_bytes(executable: &Path, args: &[Vec<u8>]) -> String 
         hash.update([0]);
         hash.update(argument);
     }
-    format!("{:x}", hash.finalize())
+    hex::encode(hash.finalize())
 }
 
 fn update_os(hash: &mut Sha256, value: &OsStr) {

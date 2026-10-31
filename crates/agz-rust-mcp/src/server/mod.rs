@@ -39,7 +39,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     change::{ChangeService, RustAnalyzerMigrationAnalyzer},
-    config::{Config, ConfigError},
+    config::{Config, ConfigError, Transport},
     context::CapsuleStore,
     docs::DocsResolver,
     lsp::RustAnalyzerManager,
@@ -54,14 +54,12 @@ use crate::{
     workspace::{AuthorizedRoot, MetadataService, RootGuard},
 };
 use admission::AdmissionController;
-use client_roots::ClientRootsCoordinator;
 
 type SharedShutdown = Shared<BoxFuture<'static, Result<(), ShutdownError>>>;
 
 pub struct AppState {
     config: Config,
     roots: Arc<RootGuard>,
-    client_roots: ClientRootsCoordinator,
     processes: ProcessSupervisor,
     check: Arc<CheckService>,
     execution: crate::tools::execution::ExecutionService,
@@ -97,7 +95,6 @@ impl fmt::Debug for AppState {
             .debug_struct("AppState")
             .field("config", &self.config)
             .field("roots", &self.roots)
-            .field("client_roots", &self.client_roots)
             .field("processes", &self.processes)
             .field("check", &self.check)
             .field("change", &self.change)
@@ -131,9 +128,9 @@ impl AppState {
             .map_err(|error| ConfigError::InvalidField {
                 field: "server.allow_roots",
                 message: error.to_string(),
-            })?,
+            })?
+            .with_independent_authorities(config.server.transport == Transport::Http),
         );
-        let client_roots = ClientRootsCoordinator::new(Arc::clone(&roots));
         let telemetry = Arc::new(ActivityLog::new(&config.telemetry).map_err(|error| {
             ConfigError::InvalidField {
                 field: "telemetry.path",
@@ -223,7 +220,6 @@ impl AppState {
         Ok(Self {
             config,
             roots,
-            client_roots,
             processes: processes.clone(),
             check,
             execution,
@@ -332,10 +328,6 @@ impl AppState {
 
     pub(crate) fn roots(&self) -> &Arc<RootGuard> {
         &self.roots
-    }
-
-    pub(crate) fn client_roots(&self) -> &ClientRootsCoordinator {
-        &self.client_roots
     }
 
     pub(crate) fn record_activity(

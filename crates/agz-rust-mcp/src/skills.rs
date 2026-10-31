@@ -1,6 +1,10 @@
 //! Versioned, offline workflow guidance shipped in the executable.
 use std::{fs, io, path::Path};
 
+use schemars::JsonSchema;
+use serde::Serialize;
+use sha2::{Digest, Sha256};
+
 #[derive(Debug, Clone, Copy)]
 pub struct BundledSkill {
     pub name: &'static str,
@@ -8,6 +12,41 @@ pub struct BundledSkill {
     pub description: &'static str,
     pub uri: &'static str,
     pub markdown: &'static str,
+}
+
+/// Metadata is cheap to discover; the body is only included when selected.
+/// Version and hash identify the exact guidance shipped in this executable.
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    pub name: &'static str,
+    pub prompt: &'static str,
+    pub description: &'static str,
+    pub uri: &'static str,
+    pub version: &'static str,
+    pub sha256: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub markdown: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_lines: Option<u32>,
+}
+
+impl BundledSkill {
+    pub fn info(self) -> SkillInfo {
+        SkillInfo {
+            name: self.name,
+            prompt: self.prompt,
+            description: self.description,
+            uri: self.uri,
+            version: env!("CARGO_PKG_VERSION"),
+            sha256: hex::encode(Sha256::digest(self.markdown.as_bytes())),
+            markdown: None,
+            start_line: None,
+            total_lines: None,
+        }
+    }
 }
 
 pub const BUNDLED_SKILLS: &[BundledSkill] = &[
@@ -41,6 +80,13 @@ pub const BUNDLED_SKILLS: &[BundledSkill] = &[
     },
 ];
 
+/// Canonical skill names and their short MCP prompt names share one catalog.
+pub fn find(name: &str) -> Option<&'static BundledSkill> {
+    BUNDLED_SKILLS
+        .iter()
+        .find(|skill| skill.name == name || skill.prompt == name)
+}
+
 pub fn run(command: &crate::config::SkillCommand) -> io::Result<()> {
     use crate::config::SkillCommand;
     use io::Write;
@@ -52,9 +98,7 @@ pub fn run(command: &crate::config::SkillCommand) -> io::Result<()> {
             }
         }
         SkillCommand::Show { name } => {
-            let skill = BUNDLED_SKILLS
-                .iter()
-                .find(|skill| skill.name == name)
+            let skill = find(name)
                 .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "unknown skill"))?;
             output.write_all(skill.markdown.as_bytes())?;
         }

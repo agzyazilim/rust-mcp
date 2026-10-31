@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     collections::BTreeMap,
     fs,
@@ -12,14 +10,16 @@ use rmcp::{
     ClientLifecycleMode, ClientServiceExt, ServiceExt,
     model::{
         CallToolRequestParams, CallToolResponse, CallToolResult, CancelTaskParams,
-        ClientCapabilities, ClientInfo, ExtensionCapabilities, GetPromptRequestParams,
-        GetTaskParams, Implementation, JsonObject, ProtocolVersion, TASKS_EXTENSION_ID,
-        TaskPayload, UpdateTaskParams,
+        ClientCapabilities, ClientConfig, ExtensionCapabilities, GetPromptRequestParams,
+        GetPromptResponse, GetTaskParams, Implementation, JsonObject, ProtocolVersion,
+        ReadResourceRequestParams, ReadResourceResponse, TASKS_EXTENSION_ID, TaskPayload,
+        UpdateTaskParams,
     },
     transport::child_process::TokioChildProcess,
 };
 use serde::Serialize;
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use tokio::process::Command;
 
 #[derive(Debug, Serialize)]
@@ -30,6 +30,8 @@ pub struct ProtocolEvidence {
     pub tool_names: Vec<String>,
     pub prompt_count: usize,
     pub resource_count: usize,
+    pub embedded_skill_count: usize,
+    pub embedded_skill_interfaces_equivalent: bool,
     pub synchronous_status: String,
     pub task_status: String,
     pub structured_text_equivalent: bool,
@@ -55,6 +57,9 @@ pub struct CheckObservation {
 }
 
 #[allow(clippy::too_many_lines)]
+///
+/// # Errors
+/// Returns an error if the server cannot be launched or any protocol, skill, task, or cleanup check fails.
 pub async fn protocol_smoke(root: &Path) -> Result<ProtocolEvidence> {
     let fixture: Value = serde_json::from_str(include_str!(
         "../../tests/fixtures/stage7/protocol/expectations.json"
@@ -137,13 +142,7 @@ pub async fn protocol_smoke(root: &Path) -> Result<ProtocolEvidence> {
     if resources.resources.len() != expected_resource_count {
         bail!("MCP resource catalog does not match the frozen protocol fixture");
     }
-    let prompt = client
-        .peer()
-        .get_prompt_once(GetPromptRequestParams::new("workflow"))
-        .await?;
-    if !matches!(prompt, rmcp::model::GetPromptResponse::Complete(_)) {
-        bail!("workflow prompt did not complete");
-    }
+    let embedded_skill_count = verify_embedded_skills(&client, &expected_prompts).await?;
 
     let synchronous = call_and_extract(&client, CallToolRequestParams::new("check")).await?;
     if synchronous.status != "FAST_PASS" || synchronous.is_error {
@@ -223,6 +222,8 @@ pub async fn protocol_smoke(root: &Path) -> Result<ProtocolEvidence> {
         tool_names,
         prompt_count: prompts.prompts.len(),
         resource_count: resources.resources.len(),
+        embedded_skill_count,
+        embedded_skill_interfaces_equivalent: true,
         synchronous_status: synchronous.status,
         task_status,
         structured_text_equivalent: synchronous.structured_text_equivalent,
@@ -234,6 +235,100 @@ pub async fn protocol_smoke(root: &Path) -> Result<ProtocolEvidence> {
         },
         provider_requests: 0,
     })
+}
+
+async fn verify_embedded_skills<S>(
+    client: &rmcp::service::RunningService<rmcp::service::RoleClient, S>,
+    expected_prompts: &[&str],
+) -> Result<usize>
+where
+    S: rmcp::service::Service<rmcp::service::RoleClient>,
+{
+    let catalog = call_skill_tool(client, None).await?;
+    let skills = catalog
+        .structured_content
+        .as_ref()
+        .and_then(|value| value.pointer("/data/skills"))
+        .and_then(Value::as_array)
+        .context("embedded skill catalog has no skills")?;
+    if skills.len() != expected_prompts.len() {
+        bail!("embedded skill catalog and prompt catalog differ");
+    }
+    for (skill, expected_prompt) in skills.iter().zip(expected_prompts) {
+        let name = skill["name"].as_str().context("embedded skill name")?;
+        let prompt_name = skill["prompt"].as_str().context("embedded skill prompt")?;
+        let uri = skill["uri"].as_str().context("embedded skill URI")?;
+        if prompt_name != *expected_prompt || skill.get("markdown").is_some() {
+            bail!("embedded skill catalog must contain ordered metadata without bodies");
+        }
+        let result = call_skill_tool(client, Some(name)).await?;
+        let body = result
+            .structured_content
+            .as_ref()
+            .and_then(|value| value.pointer("/data/skills/0/markdown"))
+            .and_then(Value::as_str)
+            .context("embedded skill tool has no markdown body")?;
+        let expected_hash = skill["sha256"]
+            .as_str()
+            .context("embedded skill checksum")?;
+        if hex::encode(Sha256::digest(body.as_bytes())) != expected_hash {
+            bail!("embedded skill body does not match its catalog checksum");
+        }
+
+        let prompt = client
+            .peer()
+            .get_prompt_once(GetPromptRequestParams::new(prompt_name))
+            .await?;
+        let GetPromptResponse::Complete(prompt) = prompt else {
+            bail!("embedded skill prompt did not complete");
+        };
+        let resource = client
+            .peer()
+            .read_resource_once(ReadResourceRequestParams::new(uri))
+            .await?;
+        let ReadResourceResponse::Complete(resource) = resource else {
+            bail!("embedded skill resource did not complete");
+        };
+        if serde_json::to_value(prompt)?["messages"][0]["content"]["text"] != body
+            || serde_json::to_value(resource)?["contents"][0]["text"] != body
+        {
+            bail!("embedded skill tool, prompt, and resource contents differ");
+        }
+    }
+    Ok(skills.len())
+}
+
+async fn call_skill_tool<S>(
+    client: &rmcp::service::RunningService<rmcp::service::RoleClient, S>,
+    skill: Option<&str>,
+) -> Result<CallToolResult>
+where
+    S: rmcp::service::Service<rmcp::service::RoleClient>,
+{
+    let mut arguments = Map::new();
+    arguments.insert("action".to_owned(), Value::String("skills".to_owned()));
+    if let Some(skill) = skill {
+        arguments.insert("skill".to_owned(), Value::String(skill.to_owned()));
+    }
+    let response = client
+        .call_tool_once(CallToolRequestParams::new("workspace").with_arguments(arguments))
+        .await?;
+    let CallToolResponse::Complete(result) = response else {
+        bail!("capability-free embedded skill call unexpectedly returned a task");
+    };
+    if result.is_error == Some(true)
+        || result_status(&result)? != "OK"
+        || !same_structured_and_text(&result)?
+        || result
+            .structured_content
+            .as_ref()
+            .and_then(|value| value.pointer("/data/authority"))
+            .and_then(Value::as_str)
+            != Some("bundled_skill_guidance")
+    {
+        bail!("embedded skill tool did not return complete, consistent bundled guidance");
+    }
+    Ok(result)
 }
 
 async fn task_cancel_smoke(root: &Path) -> Result<(bool, bool, bool)> {
@@ -387,6 +482,9 @@ impl Drop for ProtocolTaskFixture {
     }
 }
 
+///
+/// # Errors
+/// Returns an error if the server cannot be launched or the check response violates the protocol contract.
 pub async fn check(root: &Path, directory: &Path) -> Result<CheckObservation> {
     let mut command = server_command(root);
     command.arg("--allow-root").arg(directory);
@@ -446,8 +544,8 @@ fn server_binary(root: &Path) -> Option<PathBuf> {
     })
 }
 
-fn client_info(capabilities: ClientCapabilities) -> ClientInfo {
-    ClientInfo::new(
+fn client_info(capabilities: ClientCapabilities) -> ClientConfig {
+    ClientConfig::new(
         capabilities,
         Implementation::new("stage7-xtask", env!("CARGO_PKG_VERSION")),
     )

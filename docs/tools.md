@@ -7,7 +7,7 @@ and operate it. [Architecture](architecture.md) explains the process model
 behind these tools.
 
 This document defines the public tool and configuration surface of
-`agz-rust-mcp` `0.5.0`.
+`agz-rust-mcp` `0.6.0`.
 
 Request deadlines and cancellation also cover Git probes and input-identity
 collection before and after Cargo. Git subprocesses use the shared process
@@ -27,6 +27,38 @@ explicit TOML. Individual `tools.workspace`, `tools.test` and `tools.run` boolea
 (and the existing tool booleans) can disable capabilities further. The core
 preset does not initialize hidden candidate-change storage. Select full and
 restart the server when semantic navigation or advanced change workflows are needed.
+
+### Built-in workflow skills
+
+Four workflow skills are compiled into the executable and included in the crate
+package: `agz-rust-workflow`, `agz-rust-repair`, `agz-rust-refactor` and
+`agz-rust-performance`. No client plugin, external skill installation or network
+lookup is required. They are advisory workflows; the user request, project rules,
+available tools and actual compiler evidence determine the work.
+
+| MCP client surface | Discovery | Read one skill |
+| --- | --- | --- |
+| Tools | `workspace` with `{"action":"skills"}` | `{"action":"skills","skill":"workflow"}` |
+| Prompts | `prompts/list` | `prompts/get` with `name:"workflow"` and optional string `task` |
+| Resources | `resources/list` | `resources/read` with `uri:"agz-rust-mcp://skills/agz-rust-workflow"` |
+
+The tool accepts canonical names and short prompt names (`workflow`, `repair`,
+`refactor`, `performance`). `data.skills` lists metadata without the bodies;
+selecting one adds `markdown`, `startLine` and `totalLines`. Each entry identifies
+the executable's `version` and a SHA-256 of the complete embedded Markdown.
+Skill reads never scan project files, start Cargo/Analyzer or request client roots,
+and reject `dir`, `path` and `query`. Both core and full catalogs expose this through
+the existing workspace tool. If workspace is disabled, prompts/resources remain
+available.
+
+Use `cursor`/`limit` for catalog pages. For one skill use one-based `line` and
+`lineCount` (up to 500), following `page.nextLine` when the body is bounded by
+`byteBudget` or line count. `PARTIAL` and `truncated:true` identify a partial page;
+concatenate the Markdown pages in order. An unknown skill is an invalid argument.
+Prompt tasks are limited to 4,000 characters and reject unsupported control
+characters or unknown arguments instead of silently dropping task content.
+The standalone `skills list/show/export` CLI uses the same embedded catalog and
+only exports into a new destination.
 
 ### Offline workspace context
 
@@ -175,8 +207,8 @@ stdout, and the redundant mixed `tail` is empty. `reason` summarizes stage exits
 diagnostics and logs are in `steps`. Standard/full detail retains the raw bounded
 tails. All detail levels still obey the wire cap and report truncation. These
 presentation limits do not change compiler authority or executed-test counters.
-The same executable also serves four [bundled workflow skills](install.md#bundled-skills-current-source)
-through prompts/resources and the standalone `skills` CLI. The default full
+The same executable also serves four [bundled workflow skills](install.md#built-in-skills)
+through prompts/resources, `workspace(action="skills")` and the standalone `skills` CLI. The default full
 catalog contains 23 tools; `--toolset core` selects the six everyday tools.
 
 In the current source, `audit` paths and directory walks are relative to the
@@ -550,6 +582,8 @@ it must not be added to preflight time as though they were disjoint metrics.
 | Key | Default | Notes |
 | --- | --- | --- |
 | `server.allow_roots` | canonical CWD | Primary authorized workspace roots. |
+| `server.transport` | `stdio` | Standard MCP transport: `stdio` or `http`; CLI `--transport`. |
+| `server.http_bind` | `127.0.0.1:8787` | Loopback Streamable HTTP listener at `/mcp`; CLI `--http-bind`. |
 | `server.allow_dependency_roots` | empty | External path-dependency roots. |
 | `tools.check` | `true` | Register `check`. |
 | `tools.profile` | `true` | Register `profile`. |
@@ -854,9 +888,9 @@ revalidated before returning suggestions/context. Cancelled/timed-out/unclean
 work never publishes usable edits. Source budgets and missing-context reasons
 remain visible. The MCP still never applies an edit to workspace source.
 
-Nextest must report 0.9.143 from a trusted absolute PATH directory outside every
+Nextest must report 0.9.150 from a trusted absolute PATH directory outside every
 configured workspace/dependency root. No silent runner fallback is performed.
-For supervised Sccache, configure an absolute `RUSTC_WRAPPER` for version 0.17.0
+For supervised Sccache, configure an absolute `RUSTC_WRAPPER` for version 0.19.0
 and request `sccache=true`. This mode currently requires Unix; it owns a private
 foreground local cache server and socket, uses client-side compilation, and
 cleans the process tree before returning. It excludes remote/distributed cache

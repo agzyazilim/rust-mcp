@@ -6,7 +6,14 @@ description: Implement Rust changes with AGZ Rust MCP using compiler diagnostics
 # Rust implementation
 
 Use the connected AGZ Rust MCP. Client prefixes vary; discover its available
-tools once. Pass the active checkout's absolute `dir` to workspace tools.
+tools once. These skills ship inside the executable: use MCP prompts/resources,
+or `workspace(action="skills")` to list them and
+`workspace(action="skills", skill="workflow")` to read this guide in a tools-only
+client. Select one guide when needed; no client plugin, external skill directory,
+or network download is required. Skill reads take no `dir`; use `line` and
+`lineCount` when the response provides `page.nextLine`.
+
+Pass the active checkout's absolute `dir` to project operations.
 
 `dir` may be the repository root, a package/source subdirectory, or another
 authorized worktree. A branch name is not a directory restriction. Configure
@@ -24,7 +31,9 @@ numbered excerpt. Preserve reported omissions and pagination. Text search is
 not semantic evidence. For deeper analysis, use `context(action="prepare")`
 with a concrete purpose and a file/symbol anchor to gather a bounded capsule. Expand only an unresolved item;
 use `context(action="delta")` after source changes instead of reloading context.
-For a single semantic question, use `definition`, `references` or `symbol`.
+For a single semantic question, use `definition`, `references` or `symbol` when
+exposed; otherwise inspect source and compiler diagnostics without inventing
+semantic evidence.
 
 Verify new dependencies with `crate_lookup`. For an existing dependency, use
 `docs` with its resolved version and the specific symbol; keep expensive local

@@ -7,8 +7,8 @@ stdout'a girmez ve tekrar eden karma `tail` alanı boştur. `reason` aşama çı
 özetler; tanılar ve loglar `steps` içindedir. Standard/full ayrıntı ham sınırlı
 kuyrukları korur. Her ayrıntı düzeyi toplam çıktı sınırına uyar ve kesilmeyi bildirir.
 Bu sunum sınırları derleyici otoritesini veya yürütülen test sayaçlarını değiştirmez.
-Aynı binary dört [paketli iş akışı skillini](install.tr.md#paketli-skilller-güncel-kaynak)
-prompt/resource ve bağımsız `skills` CLI üzerinden sunar. Varsayılan full katalog
+Aynı binary dört [paketli iş akışı skillini](install.tr.md#yerleşik-skilller)
+prompt/resource, `workspace(action="skills")` ve bağımsız `skills` CLI üzerinden sunar. Varsayılan full katalog
 23 araç içerir; `--toolset core` günlük kullanım için altı araç seçer.
 
 **AGZ Yazılım ürünüdür.** Bu belge
@@ -17,7 +17,7 @@ prompt/resource ve bağımsız `skills` CLI üzerinden sunar. Varsayılan full k
 için bu referansı kullanın. Bu araçların arkasındaki süreç modelini
 [Mimari](architecture.tr.md) açıklar.
 
-Bu belge `agz-rust-mcp` `0.5.0` sürümünün açık araç ve yapılandırma yüzeyini
+Bu belge `agz-rust-mcp` `0.6.0` sürümünün açık araç ve yapılandırma yüzeyini
 tanımlar.
 
 İstek zaman aşımı ve iptal denetimleri, Cargo öncesi ve sonrasındaki Git
@@ -38,6 +38,38 @@ varsayılan `--toolset full` mevcut araçları da korur. Aynı seçim
 `tools.workspace`, `tools.test`, `tools.run` ve mevcut araç boolean'ları araçları
 ayrıca kapatabilir. Core, gizli change depolamasını başlatmaz. Derin semantik veya
 change akışları için full seçip sunucuyu yeniden başlatın.
+
+### Yerleşik iş akışı skillleri
+
+Dört skill doğrudan çalıştırılabilir dosyaya gömülür ve crate paketine dahil
+edilir: `agz-rust-workflow`, `agz-rust-repair`, `agz-rust-refactor` ve
+`agz-rust-performance`. İstemci eklentisi, harici skill kurulumu veya ağ isteği
+gerekmez. Skilller yol gösterir; kullanıcı isteği, proje kuralları, kullanılabilir
+araçlar ve gerçek derleyici kanıtı yapılacak işi belirler.
+
+| MCP istemci yüzeyi | Keşif | Bir skill okuma |
+| --- | --- | --- |
+| Araçlar | `workspace` ile `{"action":"skills"}` | `{"action":"skills","skill":"workflow"}` |
+| Promptlar | `prompts/list` | `prompts/get`: `name:"workflow"`, isteğe bağlı string `task` |
+| Kaynaklar | `resources/list` | `resources/read`: `uri:"agz-rust-mcp://skills/agz-rust-workflow"` |
+
+Araç tam skill adını veya kısa prompt adını (`workflow`, `repair`, `refactor`,
+`performance`) kabul eder. `data.skills` listesindeki metadata gövdeleri içermez;
+bir skill seçildiğinde `markdown`, `startLine` ve `totalLines` eklenir. Her kayıt
+binary'nin `version` bilgisini ve tam gömülü Markdown'ın SHA-256 değerini taşır.
+Skill okuması proje dosyalarını taramaz, Cargo/Analyzer başlatmaz, istemci
+köklerini istemez; `dir`, `path` ve `query` kabul etmez. Core ve full katalogları
+mevcut workspace aracı üzerinden erişim sunar. Workspace kapatıldığında da
+prompt/resource erişimi devam eder.
+
+Katalog sayfalarında `cursor`/`limit` kullanın. Tek skill için birden başlayan
+`line` ve en fazla 500 `lineCount` kullanın; gövde `byteBudget` veya satır sayısı
+ile sınırlandığında `page.nextLine` üzerinden devam edin. `PARTIAL` ve
+`truncated:true` kısmi sayfayı gösterir; Markdown sayfalarını sırayla birleştirin.
+Bilinmeyen skill, geçersiz argüman hatasıdır. Prompt görevleri en fazla 4.000
+karakterdir; desteklenmeyen kontrol karakterleri ve bilinmeyen argümanlar görevin
+sessizce kısaltılması yerine reddedilir. Bağımsız `skills list/show/export` CLI
+aynı gömülü kataloğu kullanır ve yalnız yeni bir hedefe dışa aktarır.
 
 ### Çevrimdışı kaynak bağlamı
 
@@ -538,6 +570,8 @@ sonrası girdi kimliği kontrolleri korunur. `check.queueMs` kabul, metadata/kay
 | Key | Default | Notlar |
 | --- | --- | --- |
 | `server.allow_roots` | canonical CWD | Birincil yetkili workspace kökleri. |
+| `server.transport` | `stdio` | Standart MCP taşıması: `stdio` veya `http`; CLI `--transport`. |
+| `server.http_bind` | `127.0.0.1:8787` | `/mcp` adresindeki loopback Streamable HTTP dinleyicisi; CLI `--http-bind`. |
 | `server.allow_dependency_roots` | empty | Dış path-dependency kökleri. |
 | `tools.check` | `true` | `check` kaydı. |
 | `tools.profile` | `true` | `profile` kaydı. |
@@ -839,9 +873,9 @@ de öneri/bağlam dönüşünden önce tekrar denetlenir. İptal, zaman aşımı
 temizlikte kullanılabilir öneri verilmez. Kaynak bütçeleri ve eksiklik gerekçeleri
 gösterilir; MCP kaynak dosyalarını yine değiştirmez.
 
-Nextest 0.9.143, yapılandırılmış tüm workspace/dependency köklerinin dışında,
+Nextest 0.9.150, yapılandırılmış tüm workspace/dependency köklerinin dışında,
 güvenilen mutlak PATH dizininden bulunmalıdır. Sessiz çalıştırıcı geri dönüşü yoktur.
-Gözetilen Sccache için 0.17.0 sürümüne işaret eden mutlak `RUSTC_WRAPPER` ve
+Gözetilen Sccache için 0.19.0 sürümüne işaret eden mutlak `RUSTC_WRAPPER` ve
 `sccache=true` gerekir. Bu kip şu anda Unix gerektirir; özel ön plan yerel
 önbellek sunucusu/soketi açar, derlemeyi istemci tarafında tutar ve dönüşten önce
 süreç ağacını temizler. Uzak/dağıtık ayarlar aktarılmaz; incremental seçimi

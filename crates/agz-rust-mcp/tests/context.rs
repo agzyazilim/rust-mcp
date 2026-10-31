@@ -13,7 +13,7 @@ use anyhow::{Context, Result, bail};
 use rmcp::{
     ServiceExt,
     model::{
-        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientInfo, Implementation,
+        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientConfig, Implementation,
     },
     service::{RoleClient, RunningService},
 };
@@ -66,8 +66,8 @@ fn spawn_server(config: Config) -> (tokio::io::DuplexStream, tokio::task::JoinHa
     (client_transport, task)
 }
 
-fn client_info() -> ClientInfo {
-    ClientInfo::new(
+fn client_info() -> ClientConfig {
+    ClientConfig::new(
         ClientCapabilities::default(),
         Implementation::new("agz-rust-mcp-context-test", "0.1.0"),
     )
@@ -81,14 +81,14 @@ fn arguments(entries: &[(&str, Value)]) -> Map<String, Value> {
 }
 
 fn call(
-    client: &RunningService<RoleClient, ClientInfo>,
+    client: &RunningService<RoleClient, ClientConfig>,
     entries: &[(&str, Value)],
 ) -> impl std::future::Future<Output = Result<CallToolResponse, rmcp::ServiceError>> {
     client.call_tool_once(CallToolRequestParams::new("context").with_arguments(arguments(entries)))
 }
 
 async fn call_complete(
-    client: &RunningService<RoleClient, ClientInfo>,
+    client: &RunningService<RoleClient, ClientConfig>,
     entries: &[(&str, Value)],
 ) -> Result<rmcp::model::CallToolResult> {
     match call(client, entries).await? {

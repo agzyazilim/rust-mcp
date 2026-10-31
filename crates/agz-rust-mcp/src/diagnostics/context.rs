@@ -112,7 +112,7 @@ pub(crate) fn diagnostic_contexts(
                         context.reason = Some("compiler diagnostic has no valid line".into());
                         return context;
                     };
-                    context.source_hash = Some(format!("{:x}", Sha256::digest(source.as_bytes())));
+                    context.source_hash = Some(hex::encode(Sha256::digest(source.as_bytes())));
                     let first = line.saturating_sub(3).max(1);
                     context.line_start = first;
                     context.excerpt = source

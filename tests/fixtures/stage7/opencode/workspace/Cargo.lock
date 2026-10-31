@@ -1,5 +1,0 @@
-version = 4
-
-[[package]]
-name = "stage7-opencode-fixture"
-version = "0.1.0"

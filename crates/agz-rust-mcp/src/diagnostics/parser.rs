@@ -95,60 +95,54 @@ pub fn parse_cargo_output(output: &str) -> CargoOutput {
         let line = line.strip_suffix('\r').unwrap_or(line);
         let trimmed = line.trim_start();
         let mut handled_json = false;
-        if trimmed.starts_with('{') {
-            if let Ok(message) = serde_json::from_str::<CargoMessage>(trimmed) {
-                handled_json = true;
-                match message.reason.as_deref() {
-                    Some("compiler-artifact") => {
-                        build.total_units = build.total_units.saturating_add(1);
-                        if message.fresh.unwrap_or(false) {
-                            build.fresh_units = build.fresh_units.saturating_add(1);
-                        } else {
-                            build.rebuilt_units = build.rebuilt_units.saturating_add(1);
-                            build.record_rebuilt_package(message.package_id.as_deref());
-                        }
-                        let executable = message
-                            .executable
-                            .as_deref()
-                            .is_some_and(|path| !path.is_empty());
-                        let link_kind = message
-                            .target
-                            .as_ref()
-                            .and_then(|target| target.kind.as_ref())
-                            .is_some_and(|kinds| {
-                                kinds.iter().any(|kind| {
-                                    matches!(
-                                        kind.as_str(),
-                                        "bin" | "cdylib" | "dylib" | "proc-macro"
-                                    )
-                                })
-                            });
-                        if executable || link_kind {
-                            build.linked_units = build.linked_units.saturating_add(1);
-                        }
+        if trimmed.starts_with('{')
+            && let Ok(message) = serde_json::from_str::<CargoMessage>(trimmed)
+        {
+            handled_json = true;
+            match message.reason.as_deref() {
+                Some("compiler-artifact") => {
+                    build.total_units = build.total_units.saturating_add(1);
+                    if message.fresh.unwrap_or(false) {
+                        build.fresh_units = build.fresh_units.saturating_add(1);
+                    } else {
+                        build.rebuilt_units = build.rebuilt_units.saturating_add(1);
+                        build.record_rebuilt_package(message.package_id.as_deref());
                     }
-                    Some("build-script-executed") => {
-                        build.build_scripts = build.build_scripts.saturating_add(1);
-                        build.record_build_script_package(message.package_id.as_deref());
+                    let executable = message
+                        .executable
+                        .as_deref()
+                        .is_some_and(|path| !path.is_empty());
+                    let link_kind = message
+                        .target
+                        .as_ref()
+                        .and_then(|target| target.kind.as_ref())
+                        .is_some_and(|kinds| {
+                            kinds.iter().any(|kind| {
+                                matches!(kind.as_str(), "bin" | "cdylib" | "dylib" | "proc-macro")
+                            })
+                        });
+                    if executable || link_kind {
+                        build.linked_units = build.linked_units.saturating_add(1);
                     }
-                    Some("compiler-message") => {
-                        if let Some(raw) = message.message {
-                            if let Some(mut diagnostic) = normalize_diagnostic(raw) {
-                                diagnostic.package_id = message.package_id;
-                                diagnostic.target_name =
-                                    message.target.and_then(|target| target.name);
-                                insert_diagnostic(&mut diagnostics, &mut indexes, diagnostic);
-                            }
-                        }
-                    }
-                    _ => {}
                 }
+                Some("build-script-executed") => {
+                    build.build_scripts = build.build_scripts.saturating_add(1);
+                    build.record_build_script_package(message.package_id.as_deref());
+                }
+                Some("compiler-message") => {
+                    if let Some(raw) = message.message
+                        && let Some(mut diagnostic) = normalize_diagnostic(raw)
+                    {
+                        diagnostic.package_id = message.package_id;
+                        diagnostic.target_name = message.target.and_then(|target| target.name);
+                        insert_diagnostic(&mut diagnostics, &mut indexes, diagnostic);
+                    }
+                }
+                _ => {}
             }
         }
-        if !handled_json {
-            if let Some(diagnostic) = parse_short_diagnostic_line(line) {
-                insert_diagnostic(&mut diagnostics, &mut indexes, diagnostic);
-            }
+        if !handled_json && let Some(diagnostic) = parse_short_diagnostic_line(line) {
+            insert_diagnostic(&mut diagnostics, &mut indexes, diagnostic);
         }
     }
 

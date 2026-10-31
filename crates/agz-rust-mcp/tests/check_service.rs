@@ -1145,7 +1145,7 @@ async fn clippy_and_test_scope_widens_for_build_scripts() {
 }
 
 #[tokio::test]
-#[ignore = "requires checksum-verified cargo-nextest 0.9.143 on PATH"]
+#[ignore = "requires checksum-verified cargo-nextest 0.9.150 on PATH"]
 async fn real_nextest_executes_test_filters_and_keeps_doctest_stage() {
     use agz_rust_mcp::gate::{TestRunner, ValidationOptions};
     let project = TestProject::new(
@@ -1213,7 +1213,7 @@ async fn real_nextest_executes_test_filters_and_keeps_doctest_stage() {
 
 #[cfg(unix)]
 #[tokio::test]
-#[ignore = "requires explicit RUSTC_WRAPPER pointing to checksum-verified sccache 0.17.0"]
+#[ignore = "requires explicit RUSTC_WRAPPER pointing to checksum-verified sccache 0.19.0"]
 async fn real_sccache_compiles_and_cleans_the_owned_server() {
     #[cfg(target_os = "linux")]
     let before = live_sccache_pids();

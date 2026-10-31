@@ -1370,13 +1370,12 @@ fn find_workspace_root(authority: &AuthorizedRoot, package_root: &Path) -> Optio
     let mut current = package_root.to_owned();
     loop {
         let manifest = current.join("Cargo.toml");
-        if let Ok(text) = read_authorized_text(authority, &manifest, MAX_LOCK_BYTES) {
-            if text
+        if let Ok(text) = read_authorized_text(authority, &manifest, MAX_LOCK_BYTES)
+            && text
                 .parse::<toml::Table>()
                 .is_ok_and(|table| table.contains_key("workspace"))
-            {
-                return Some(current);
-            }
+        {
+            return Some(current);
         }
         if has_entry(authority, &current, ".git") || current == authority.path() {
             break;
@@ -2424,7 +2423,7 @@ fn fingerprint(
         hasher.update(bytes);
         hasher.update([0xff]);
     }
-    Some(format!("{:x}", hasher.finalize()))
+    Some(hex::encode(hasher.finalize()))
 }
 
 fn bounded_fingerprint_files(root: &Arc<AuthorizedRoot>, limit: usize) -> Option<Vec<PathBuf>> {

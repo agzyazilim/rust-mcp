@@ -6,7 +6,7 @@
 
 English | [Türkçe](README.tr.md)
 
-**An AGZ Yazılım product.** `agz-rust-mcp` is a standalone stdio MCP server for
+**An AGZ Yazılım product.** `agz-rust-mcp` is a standalone MCP server with stdio and Streamable HTTP transports for
 general-purpose Rust development grounded in Cargo and rustc. Discover a project
 offline, collect focused source context and compiler diagnostics, select individual
 tests, and run binaries/examples. Exact-version dependency docs, Rust Analyzer
@@ -48,7 +48,7 @@ Use `agz-rust-mcp --toolset core` for a compact catalog of six everyday tools:
 # latest release, verify the script, then run it
 bash install.sh
 
-# crates.io (requires Rust 1.88.0 or newer)
+# crates.io (requires Rust 1.91.0 or newer)
 cargo install agz-rust-mcp --locked
 agz-rust-mcp --version
 ```
@@ -64,28 +64,49 @@ troubleshooting: [docs/install.md](docs/install.md) ·
 
 ## MCP Client Setup
 
-The current source also bundles four offline skills: `agz-rust-workflow`,
-`agz-rust-repair`, `agz-rust-refactor`, and `agz-rust-performance`. One executable
-serves the tools and their workflows through MCP prompts/resources; a second MCP
-is unnecessary. Filesystem-based clients can use `agz-rust-mcp skills export`.
-See [bundled skills](docs/install.md#bundled-skills-current-source).
-Bundled skills are available from `0.4.0`; `0.3.0` binaries do not include them.
+Use the installed executable with any client supporting local stdio MCP. Supply
+these fields in the client's own server configuration format:
 
-| Client | Configuration | Guide |
-| --- | --- | --- |
-| ZCode | `~/.zcode/cli/config.json` → `mcp.servers.rust` | [ZCode](docs/install.md#zcode-zcodecliconfigjson) |
-| OpenCode | `opencode.jsonc` → `mcp.rust` | [OpenCode](docs/install.md#opencode-opencodejsonc) |
-| OpenCode2 | `opencode.jsonc` → `mcp.servers.rust` | [OpenCode2](docs/install.md#opencode2-opencodejsonc) |
-| Codex | `~/.codex/config.toml` → `mcp_servers.rust` | [Codex](docs/install.md#codex-codexconfigtoml) |
+```json
+{
+  "command": "agz-rust-mcp",
+  "args": ["--allow-root", "/absolute/path/to/project"],
+  "env": {"AGZ_RUST_MCP_SERVER__TOOLSET": "core"}
+}
+```
 
-Use the example for your client; OpenCode and OpenCode2 have different layouts.
-All launch the installed `agz-rust-mcp` binary. Run `agz-rust-mcp --version`
-once before connecting, and use an absolute path if the client's `PATH` differs.
+For a client that uses HTTP, start the same binary as a local Streamable HTTP
+server and configure `http://127.0.0.1:8787/mcp` as its MCP URL:
 
-The canonical current directory is the default authorized root. Add explicit
-roots with repeated `--allow-root` arguments when the client starts elsewhere;
-client-provided MCP roots may narrow configured access but never widen it. See
-[docs/install.md](docs/install.md#mcp-client-setup) for per-client setup.
+```bash
+agz-rust-mcp --transport http --http-bind 127.0.0.1:8787 \
+  --allow-root /absolute/path/to/project
+```
+
+The HTTP listener is loopback-only. It supports the session lifecycle used by
+`2025-11-25` clients and the stateless `2026-07-28` protocol. Client-side display
+prefixes, configuration file locations, and automatic prompt selection belong
+to the client; the server depends on none of them. The canonical working
+directory is the default authorized root; client-provided roots can only narrow
+configured access. See [connection details](docs/install.md#mcp-client-setup).
+
+## Built-in skills
+
+Four offline skills ship inside the executable: `agz-rust-workflow`,
+`agz-rust-repair`, `agz-rust-refactor`, and `agz-rust-performance`.
+They are available immediately through all three standard MCP interfaces:
+
+- Tools: `workspace(action="skills")` lists the catalog;
+  `workspace(action="skills", skill="agz-rust-workflow")` reads a skill.
+- Prompts: `prompts/list` and `prompts/get` expose `workflow`, `repair`,
+  `refactor`, and `performance`.
+- Resources: `resources/read` exposes `agz-rust-mcp://skills/<skill-name>`.
+
+A client that only exposes tools can use the complete skill content. Version and
+SHA-256 metadata identify the exact bundled instructions. No skill installation
+or separate MCP is required. Optional `agz-rust-mcp skills export --dir <new-directory>`
+creates files for clients that also support filesystem skills; existing files
+are never overwritten. See [built-in skills](docs/install.md#built-in-skills).
 
 ## Documentation
 
@@ -110,45 +131,45 @@ The bilingual index with the full reading path is
 | --- | --- |
 | Crate, binary, server | `agz-rust-mcp` |
 | MCP Registry | `io.github.agzyazilim/rust-mcp` |
-| Source version | `0.5.0` |
+| Source version | `0.6.0` |
 | First release | `0.1.0` |
 | Release tag | `agz-rust-mcp-v<version>` |
-| Rust edition / MSRV | `2024` / `1.88.0` |
-| Rust MCP SDK | `rmcp` `3.1.4` |
+| Rust edition / MSRV | `2024` / `1.91.0` |
+| Rust MCP SDK | `rmcp` `3.8.0` |
 | Default / discovered protocol | `2025-11-25` / `2026-07-28` |
 
 MCP package ownership marker: `mcp-name: io.github.agzyazilim/rust-mcp`.
 
 ## Tools
 
-MCP clients may prefix tool names (for example `rust_*`); use the names from
-the connected server's tool catalog.
+These are the exact server tool names. Use the names returned by `tools/list`;
+a client may display its own namespace or prefix.
 
-| MCP tool | Example prefixed name | Default | Purpose |
-| --- | --- | --- | --- |
-| `workspace` | `rust_workspace` | `enabled` | Inspect manifests/lockfiles, search source and read excerpts offline without Cargo or Rust Analyzer. |
-| `test` | `rust_test` | `enabled` | Discover, compile or run selected tests with exact names, ignored-test controls and bounded execution. |
-| `run` | `rust_run` | `enabled` | Run an exact Cargo binary/example with literal arguments, a deadline and bounded output. |
-| `check` | `rust_check` | `enabled` | Run bounded Cargo check, Clippy, tests, docs, or the full gate. |
-| `profile` | `rust_profile` | `enabled` | Analyze observed Cargo rebuild behavior and compare bounded build evidence without claiming unmeasured speedups. |
-| `audit` | `rust_audit` | `enabled` | Scan Rust source for bounded static findings. |
-| `crate_lookup` | `rust_crate_lookup` | `enabled` | Verify a crate and optional exact version on crates.io. |
-| `docs` | `rust_docs` | `enabled` | Resolve exact-version docs from cache, local sources, or docs.rs. |
-| `context` | `rust_context` | `enabled` | Prepare, expand, or delta a revision-bound semantic context capsule with per-item reasons. |
-| `api` | `rust_api` | `enabled` | Resolve an API signature from bounded analyzer evidence or type-check a candidate snippet in an isolated copy of the workspace configuration. |
-| `explain` | `rust_explain` | `enabled` | Explain macro expansion provenance, trait obligations, or cfg enablement. |
-| `verify` | `rust_verify` | `enabled` | Plan or run a bounded feature, target, toolchain, and stage matrix. |
-| `symbol` | `rust_symbol` | `enabled` | Read Rust Analyzer hover data for one symbol. |
-| `references` | `rust_references` | `enabled` | Find bounded references. |
-| `definition` | `rust_definition` | `enabled` | Find the selected definition. |
-| `symbols` | `rust_symbols` | `enabled` | List symbols in one Rust file. |
-| `implementations` | `rust_implementations` | `enabled` | Find implementations. |
-| `hierarchy` | `rust_hierarchy` | `enabled` | Trace a bounded call hierarchy. |
-| `rename` | `rust_rename` | `enabled` | Produce a verified rename edit package without applying it. |
-| `refactor` | `rust_refactor` | `enabled` | Produce a verified refactor edit package without applying it. |
-| `change` | `rust_change` | `enabled` | Create, stage, migrate, and validate a revision-bound changeset in server-owned scratch without writing the workspace. |
-| `repair` | `rust_repair` | `enabled` | Analyze, try, compare, and minimize compiler-driven repair candidates for a failing change revision without writing the workspace. |
-| `work` | `rust_work` | `enabled` | Drive a typed intent through change/validate with explicit gates and budgets, returning honest gate evidence or a bounded single-use handoff. |
+| MCP tool | Default | Purpose |
+| --- | --- | --- |
+| `workspace` | `enabled` | Read built-in skills, inspect manifests/lockfiles, search source and read excerpts offline. |
+| `test` | `enabled` | Discover, compile or run selected tests with exact names, ignored-test controls and bounded execution. |
+| `run` | `enabled` | Run an exact Cargo binary/example with literal arguments, a deadline and bounded output. |
+| `check` | `enabled` | Run bounded Cargo check, Clippy, tests, docs, or the full gate. |
+| `profile` | `enabled` | Analyze observed Cargo rebuild behavior and compare bounded build evidence without claiming unmeasured speedups. |
+| `audit` | `enabled` | Scan Rust source for bounded static findings. |
+| `crate_lookup` | `enabled` | Verify a crate and optional exact version on crates.io. |
+| `docs` | `enabled` | Resolve exact-version docs from cache, local sources, or docs.rs. |
+| `context` | `enabled` | Prepare, expand, or delta a revision-bound semantic context capsule with per-item reasons. |
+| `api` | `enabled` | Resolve an API signature from bounded analyzer evidence or type-check a candidate snippet in an isolated copy of the workspace configuration. |
+| `explain` | `enabled` | Explain macro expansion provenance, trait obligations, or cfg enablement. |
+| `verify` | `enabled` | Plan or run a bounded feature, target, toolchain, and stage matrix. |
+| `symbol` | `enabled` | Read Rust Analyzer hover data for one symbol. |
+| `references` | `enabled` | Find bounded references. |
+| `definition` | `enabled` | Find the selected definition. |
+| `symbols` | `enabled` | List symbols in one Rust file. |
+| `implementations` | `enabled` | Find implementations. |
+| `hierarchy` | `enabled` | Trace a bounded call hierarchy. |
+| `rename` | `enabled` | Produce a verified rename edit package without applying it. |
+| `refactor` | `enabled` | Produce a verified refactor edit package without applying it. |
+| `change` | `enabled` | Create, stage, migrate, and validate a revision-bound changeset in server-owned scratch without writing the workspace. |
+| `repair` | `enabled` | Analyze, try, compare, and minimize compiler-driven repair candidates for a failing change revision without writing the workspace. |
+| `work` | `enabled` | Drive a typed intent through change/validate with explicit gates and budgets, returning honest gate evidence or a bounded single-use handoff. |
 
 Every tool returns deterministic structured data plus an equivalent bounded text
 fallback. External data stays under `untrustedData`. Expected domain outcomes
@@ -164,6 +185,8 @@ sections, for example `AGZ_RUST_MCP_GATE__HARD_TIMEOUT_MS=600000`.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
+| `server.transport` | `stdio` | MCP transport: `stdio` or `http`. |
+| `server.http_bind` | `127.0.0.1:8787` | Loopback address for the HTTP `/mcp` endpoint. |
 | `server.allow_roots` | canonical CWD | Workspace read/command boundary. |
 | `server.allow_dependency_roots` | empty | Explicit external path-dependency roots. |
 | `gate.hard_timeout_ms` | `600000` | Cargo operation deadline. |
@@ -208,7 +231,7 @@ vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 - Repository: https://github.com/agzyazilim/rust-mcp
 - Crate: https://crates.io/crates/agz-rust-mcp
-- SDK docs: https://docs.rs/rmcp/3.1.4/rmcp/
+- SDK docs: https://docs.rs/rmcp/3.8.0/rmcp/
 - MCP `2025-11-25`: https://modelcontextprotocol.io/specification/2025-11-25
 - MCP `2026-07-28`: https://modelcontextprotocol.io/specification/2026-07-28
 

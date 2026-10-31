@@ -670,7 +670,7 @@ fn cache_key(identity: &CacheIdentity) -> String {
     let encoded = serde_json::to_vec(identity).unwrap_or_default();
     let mut hasher = Sha256::new();
     hasher.update(encoded);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn read_bounded(path: &Path, max_bytes: u64) -> Result<Vec<u8>, DocsCacheError> {

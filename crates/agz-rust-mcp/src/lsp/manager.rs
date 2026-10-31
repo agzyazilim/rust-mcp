@@ -1601,10 +1601,10 @@ where
             state.instances.len() + state.starts.len()
         };
         self.inner.availability.notify_waiters();
-        if let Ok(mut task) = self.inner.sweep_task.lock() {
-            if let Some(task) = task.take() {
-                task.abort();
-            }
+        if let Ok(mut task) = self.inner.sweep_task.lock()
+            && let Some(task) = task.take()
+        {
+            task.abort();
         }
 
         let deadline = Instant::now() + self.close_budget();
@@ -1991,10 +1991,10 @@ where
                     .schema
                     .lock()
                     .map_err(|_| ManagerError::Poisoned)?;
-                if let Some((cached_binary, result)) = &*cache {
-                    if cached_binary == &binary {
-                        return result.clone();
-                    }
+                if let Some((cached_binary, result)) = &*cache
+                    && cached_binary == &binary
+                {
+                    return result.clone();
                 }
                 let mut flight_slot = self
                     .inner
@@ -2069,18 +2069,17 @@ where
                         ))
                     }
                 });
-            if !matches!(&result, Err(ManagerError::Cancelled)) {
-                if let Ok(mut cache) = self.inner.schema.lock() {
-                    *cache = Some((binary.clone(), result.clone()));
-                }
+            if !matches!(&result, Err(ManagerError::Cancelled))
+                && let Ok(mut cache) = self.inner.schema.lock()
+            {
+                *cache = Some((binary.clone(), result.clone()));
             }
-            if let Ok(mut slot) = self.inner.schema_flight.lock() {
-                if slot
+            if let Ok(mut slot) = self.inner.schema_flight.lock()
+                && slot
                     .as_ref()
                     .is_some_and(|(active_binary, _)| active_binary == &binary)
-                {
-                    *slot = None;
-                }
+            {
+                *slot = None;
             }
             if let Ok(mut slot) = flight.result.lock() {
                 *slot = Some(result.clone());
@@ -2215,14 +2214,13 @@ where
         if !completed {
             return false;
         }
-        if let Ok(mut state) = self.inner.state.lock() {
-            if state
+        if let Ok(mut state) = self.inner.state.lock()
+            && state
                 .instances
                 .get(&instance.root)
                 .is_some_and(|current| Arc::ptr_eq(current, &instance))
-            {
-                state.instances.remove(&instance.root);
-            }
+        {
+            state.instances.remove(&instance.root);
         }
         instance.stop.finish();
         self.inner.availability.notify_waiters();

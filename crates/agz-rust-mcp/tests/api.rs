@@ -236,7 +236,7 @@ fn digest(path: &Path) -> String {
     let bytes = fs::read(path).expect("read digest target");
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn messages(data: &ApiData) -> String {

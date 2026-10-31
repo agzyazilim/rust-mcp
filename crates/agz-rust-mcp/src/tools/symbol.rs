@@ -69,11 +69,6 @@ where
     with_lsp_context(authority, protocol_root, future).await
 }
 
-#[allow(dead_code)] // Retained for crate-local callers that only need capability access.
-pub(crate) fn current_lsp_authority() -> Option<Arc<AuthorizedRoot>> {
-    current_lsp_context().map(|context| context.authority)
-}
-
 fn current_lsp_context() -> Option<LspContext> {
     LSP_CONTEXT.try_with(Clone::clone).ok()
 }
@@ -317,32 +312,32 @@ pub fn flatten_symbols(raw: &Value) -> Vec<SymbolEntry> {
                     .and_then(|range| range.get("start"))
             })
             .or_else(|| object.get("range").and_then(|range| range.get("start")));
-        if let Some(start) = start {
-            if let (Some(line), Some(character)) = (
+        if let Some(start) = start
+            && let (Some(line), Some(character)) = (
                 start.get("line").and_then(Value::as_u64),
                 start.get("character").and_then(Value::as_u64),
-            ) {
-                entries.push(SymbolEntry {
-                    name: name.to_owned(),
-                    container_name: object
-                        .get("containerName")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                        .or_else(|| container.clone()),
-                    kind: object
-                        .get("kind")
-                        .and_then(Value::as_u64)
-                        .and_then(|kind| u32::try_from(kind).ok()),
-                    line: u32::try_from(line).unwrap_or(u32::MAX),
-                    character: u32::try_from(character).unwrap_or(u32::MAX),
-                });
-            }
+            )
+        {
+            entries.push(SymbolEntry {
+                name: name.to_owned(),
+                container_name: object
+                    .get("containerName")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+                    .or_else(|| container.clone()),
+                kind: object
+                    .get("kind")
+                    .and_then(Value::as_u64)
+                    .and_then(|kind| u32::try_from(kind).ok()),
+                line: u32::try_from(line).unwrap_or(u32::MAX),
+                character: u32::try_from(character).unwrap_or(u32::MAX),
+            });
         }
-        if depth < MAX_SYMBOL_DEPTH {
-            if let Some(children) = object.get("children").and_then(Value::as_array) {
-                for child in children.iter().rev() {
-                    pending.push((child, Some(name.to_owned()), depth + 1));
-                }
+        if depth < MAX_SYMBOL_DEPTH
+            && let Some(children) = object.get("children").and_then(Value::as_array)
+        {
+            for child in children.iter().rev() {
+                pending.push((child, Some(name.to_owned()), depth + 1));
             }
         }
     }

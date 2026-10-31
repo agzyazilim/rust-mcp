@@ -436,7 +436,7 @@ impl WorkService {
             id: id.clone(),
             created_at_ms: now_ms(),
             updated_at_ms: now_ms(),
-            workspace_root: workspace.root().path().to_owned(),
+            workspace_root: workspace.path().to_owned(),
             workspace_epoch: workspace.epoch(),
             state: WorkState::Planned,
             intent,
@@ -596,15 +596,14 @@ impl WorkService {
                 Some(&work_id),
             );
         };
-        if record.workspace_root != workspace.root().path()
-            || record.workspace_epoch != workspace.epoch()
+        if record.workspace_root != workspace.path() || record.workspace_epoch != workspace.epoch()
         {
-            return self.finish_error(
-                record,
+            return self.refuse(
                 WorkAction::Resume,
                 "STALE",
                 "The work belongs to a different workspace or authorization epoch.",
                 "workspace identity or root epoch changed; the work was not resumed",
+                Some(&work_id),
             );
         }
         if record.state != WorkState::NeedsModel {
@@ -773,15 +772,14 @@ impl WorkService {
                 );
             }
         };
-        if record.workspace_root != workspace.root().path()
-            || record.workspace_epoch != workspace.epoch()
+        if record.workspace_root != workspace.path() || record.workspace_epoch != workspace.epoch()
         {
-            return self.finish_error(
-                record,
+            return self.refuse(
                 WorkAction::Inspect,
                 "STALE",
                 "The work belongs to a different workspace or authorization epoch.",
                 "workspace identity or root epoch changed; the record was not returned",
+                Some(&record.id),
             );
         }
         let data = self.data_for_record("inspect", &record);
@@ -823,16 +821,15 @@ impl WorkService {
                 Some(&work_id),
             );
         };
-        if record.workspace_root != workspace.root().path()
-            || record.workspace_epoch != workspace.epoch()
+        if record.workspace_root != workspace.path() || record.workspace_epoch != workspace.epoch()
         {
             let reason = "workspace identity or root epoch changed; cancel was refused".to_owned();
-            return self.finish_error(
-                record,
+            return self.refuse(
                 WorkAction::Cancel,
                 "STALE",
                 "The work belongs to a different workspace or authorization epoch.",
                 reason,
+                Some(&work_id),
             );
         }
         if record.state.is_terminal() {
@@ -1711,7 +1708,7 @@ fn candidate_fingerprint(patches: &[PatchInput], new_files: &[NewFileInput]) -> 
         hasher.update(digest.as_bytes());
         hasher.update(b"\0");
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn failure_fingerprint(
@@ -1735,7 +1732,7 @@ fn failure_fingerprint(
         hasher.update(diagnostic.message.as_bytes());
         hasher.update(b"\0");
     }
-    Some(format!("{:x}", hasher.finalize()))
+    Some(hex::encode(hasher.finalize()))
 }
 
 fn candidate_input_schema() -> &'static serde_json::Value {
@@ -1763,13 +1760,13 @@ fn generate_token(
     hasher.update(sequence.to_string().as_bytes());
     hasher.update(b"\0");
     hasher.update(issued_at_ms.to_string().as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn is_valid_work_id(id: &str) -> bool {

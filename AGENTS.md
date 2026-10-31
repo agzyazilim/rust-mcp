@@ -2,12 +2,11 @@
 
 ## Delivery
 
-- Use Rust 2024 with MSRV 1.88.0 and keep `#![forbid(unsafe_code)]`.
+- Use Rust 2024 with MSRV 1.91.0 and keep `#![forbid(unsafe_code)]`.
 - Run formatting, workspace Clippy with `-D warnings`, all-target tests, MSRV
   check, release build, and the `xtask` commands `protocol-smoke`,
-  `benchmark-smoke`, and `task-benchmark-smoke` before a release. Run
-  `opencode-smoke` separately when changing the optional legacy client adapter;
-  a particular MCP client is not a prerequisite for the core release.
+  `benchmark-smoke`, and `task-benchmark-smoke` before a release. Verify the
+  protocol directly without installing a particular MCP client or model provider.
 - Keep actions and release tooling pinned. Do not weaken artifact, checksum,
   tag, package, or registry identity checks.
 

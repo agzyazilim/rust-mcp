@@ -16,6 +16,7 @@ import tempfile
 import time
 
 from mcp_stdio import McpSession
+from toolchain import selected_toolchain
 
 
 def digest(path):
@@ -38,11 +39,11 @@ def fixture(root):
     return {name: digest(root / name) for name in files}
 
 
-def run(binary, cargo, root, debounce):
+def run(binary, cargo, root, debounce, toolchain):
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGZ_RUST_MCP_")}
     env.pop("CARGO_TARGET_DIR", None)
-    env.update(RUSTUP_TOOLCHAIN="1.88.0", CARGO_NET_OFFLINE="true", CARGO_INCREMENTAL="0",
-               RUSTC_WRAPPER="", RUST_BALANCED_SCCACHE="off")
+    env.update(RUSTUP_TOOLCHAIN=toolchain, CARGO_NET_OFFLINE="true", CARGO_INCREMENTAL="0",
+               RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="")
     with tempfile.TemporaryDirectory(prefix="agz-request-latency-") as directory:
         state = Path(directory)
         command = [str(binary), "--allow-root", str(root), "--cargo-path", str(cargo),
@@ -83,13 +84,15 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--baseline-report", type=Path)
+    parser.add_argument("--toolchain", help="Rust toolchain (default: repository rust-toolchain.toml)")
     args = parser.parse_args()
+    toolchain = selected_toolchain(args.toolchain)
     root = args.fixture.resolve()
     hashes = fixture(root)
     rows = []
     for repetition in range(3):
         for debounce in ((500, 0) if repetition % 2 == 0 else (0, 500)):
-            rows.extend(run(args.binary.resolve(), args.cargo.resolve(), root, debounce))
+            rows.extend(run(args.binary.resolve(), args.cargo.resolve(), root, debounce, toolchain))
     assert fixture(root) == hashes
     summary = {}
     for debounce in (500, 0):
@@ -99,7 +102,7 @@ def main():
             summary[str(debounce)][cache] = {key: statistics.median(r[key] for r in selected)
                 for key in ("wallMs", "cargoMs", "queueMs")}
     report = {"binarySha256": digest(args.binary), "fixtureSha256": hashes,
-              "rust": "1.88.0", "sccache": False, "incremental": False,
+              "rust": toolchain, "sccache": False, "incremental": False,
               "samples": rows, "summary": summary}
     if args.baseline_report:
         baseline = json.loads(args.baseline_report.read_text())

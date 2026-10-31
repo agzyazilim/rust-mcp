@@ -1,12 +1,3 @@
-#[path = "../src/mcp.rs"]
-mod mcp;
-
-#[path = "../src/benchmark.rs"]
-mod benchmark;
-
-#[path = "../src/child_process.rs"]
-mod child_process;
-
 use std::{
     fs,
     path::PathBuf,
@@ -16,7 +7,8 @@ use std::{
     },
 };
 
-use benchmark::{
+use serde_json::json;
+use xtask::benchmark::{
     BenchmarkCounters, FrozenFixture, FrozenRunManifest, LiveFuture, LivePreflight,
     LiveTrialAdapter, LiveTrialRequest, LiveTrialResult, OutcomeComparison, TypedOutcome,
     classify_cargo_oracle, compare_typed_outcomes, guard_live_run, publish_evidence,
@@ -24,7 +16,6 @@ use benchmark::{
     run_live_benchmark_with_adapter, smoke_run_id, smoke_run_manifest, validate_legacy_manifest,
     validate_live_trial_result,
 };
-use serde_json::json;
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))

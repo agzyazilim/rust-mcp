@@ -22,17 +22,18 @@ name = "agz-rust-mcp"
 path = "src/main.rs"
 
 [dependencies]
+axum.workspace = true
 cap-std.workspace = true
-cargo-platform.workspace = true
 cargo-lock.workspace = true
 cargo_metadata.workspace = true
 clap.workspace = true
 directories.workspace = true
 fs4.workspace = true
+hex.workspace = true
 futures.workspace = true
 process-wrap.workspace = true
 reqwest.workspace = true
-rmcp.workspace = true
+rmcp = { workspace = true, features = ["server", "macros", "schemars", "transport-io", "transport-streamable-http-server"] }
 schemars.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -49,7 +50,7 @@ command-fds.workspace = true
 libc.workspace = true
 
 [dev-dependencies]
-proptest = "=1.6.0"
+proptest = "=1.12.0"
 loom = "=0.7.2"
 anyhow.workspace = true
 rmcp = { workspace = true, features = ["client", "transport-child-process"] }

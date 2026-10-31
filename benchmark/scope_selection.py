@@ -14,6 +14,7 @@ import tempfile
 import time
 
 from mcp_stdio import McpSession
+from toolchain import selected_toolchain
 
 
 def digest(path):
@@ -49,11 +50,11 @@ def prepare_fixture(root):
     return {name: digest(root / name) for name in sorted(sources)}
 
 
-def repetition(binary, cargo, root, selected):
+def repetition(binary, cargo, root, selected, toolchain):
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGZ_RUST_MCP_")}
     env.pop("CARGO_TARGET_DIR", None)
-    env.update(RUSTUP_TOOLCHAIN="1.88.0", CARGO_NET_OFFLINE="true",
-               CARGO_INCREMENTAL="0", RUSTC_WRAPPER="", RUST_BALANCED_SCCACHE="off")
+    env.update(RUSTUP_TOOLCHAIN=toolchain, CARGO_NET_OFFLINE="true",
+               CARGO_INCREMENTAL="0", RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="")
     options = {"testFilter": "scope_focus"}
     if selected:
         options.update(packages=["scope-0"], cargoTarget={"kind": "test", "name": "focused"})
@@ -115,17 +116,19 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--selected", action="store_true")
     parser.add_argument("--baseline-report", type=Path)
+    parser.add_argument("--toolchain", help="Rust toolchain (default: repository rust-toolchain.toml)")
     args = parser.parse_args()
+    toolchain = selected_toolchain(args.toolchain)
     root = args.fixture.resolve()
     hashes = prepare_fixture(root)
-    rows = [row for _ in range(3) for row in repetition(args.binary.resolve(), args.cargo.resolve(), root, args.selected)]
+    rows = [row for _ in range(3) for row in repetition(args.binary.resolve(), args.cargo.resolve(), root, args.selected, toolchain)]
     assert prepare_fixture(root) == hashes
     summary = {cache: {
         "medianWallMs": statistics.median(row["wallMs"] for row in rows if row["cache"] == cache),
         "medianCargoMs": statistics.median(row["cargoMs"] for row in rows if row["cache"] == cache),
     } for cache in ("cold", "warm")}
     report = {"binarySha256": digest(args.binary), "fixtureSha256": hashes,
-              "selected": args.selected, "rust": "1.88.0", "sccache": False,
+              "selected": args.selected, "rust": toolchain, "sccache": False,
               "incremental": False, "samples": rows, "summary": summary,
               "scope": "same one executed test, not full-workspace correctness"}
     if args.baseline_report:

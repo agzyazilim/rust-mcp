@@ -215,7 +215,7 @@ pub(crate) fn capture_tree(
             hasher.update(&bytes);
             files.push(ManifestEntry {
                 path: relative_path_string(&relative),
-                sha256: format!("{:x}", hasher.finalize()),
+                sha256: hex::encode(hasher.finalize()),
                 bytes: bytes.len() as u64,
             });
             total_bytes = total_bytes.saturating_add(bytes.len() as u64);
@@ -279,13 +279,13 @@ pub(crate) fn manifest_hash(manifest: &CaptureManifest) -> String {
         hasher.update(entry.bytes.to_string().as_bytes());
         hasher.update(b"\n");
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 pub(crate) fn relative_path_string(path: &Path) -> String {

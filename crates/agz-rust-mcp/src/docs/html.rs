@@ -335,17 +335,18 @@ fn finish_text(input: &str) -> String {
                 continue;
             };
             let tag = &lower[index..=end];
-            if let Some(name) = excluded_tag_name(tag) {
-                if !tag.trim_end().ends_with("/>") && !tag.starts_with("</") {
-                    let close = format!("</{name}");
-                    if let Some(relative) = lower[end + 1..].find(&close) {
-                        let close_start = end + 1 + relative;
-                        let close_end =
-                            tag_end(&lower, close_start).unwrap_or(lower.len().saturating_sub(1));
-                        index = close_end + 1;
-                        without_unsafe.push(' ');
-                        continue;
-                    }
+            if let Some(name) = excluded_tag_name(tag)
+                && !tag.trim_end().ends_with("/>")
+                && !tag.starts_with("</")
+            {
+                let close = format!("</{name}");
+                if let Some(relative) = lower[end + 1..].find(&close) {
+                    let close_start = end + 1 + relative;
+                    let close_end =
+                        tag_end(&lower, close_start).unwrap_or(lower.len().saturating_sub(1));
+                    index = close_end + 1;
+                    without_unsafe.push(' ');
+                    continue;
                 }
             }
             without_unsafe.push(' ');

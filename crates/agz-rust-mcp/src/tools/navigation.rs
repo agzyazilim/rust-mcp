@@ -271,11 +271,11 @@ fn flatten_document_symbols(raw: &Value) -> Vec<DocumentSymbolEntry> {
             start: range.start.line,
             end: range.end.line,
         });
-        if depth < MAX_DOCUMENT_SYMBOL_DEPTH {
-            if let Some(children) = object.get("children").and_then(Value::as_array) {
-                for child in children.iter().rev() {
-                    pending.push((child, Some(name.to_owned()), depth + 1));
-                }
+        if depth < MAX_DOCUMENT_SYMBOL_DEPTH
+            && let Some(children) = object.get("children").and_then(Value::as_array)
+        {
+            for child in children.iter().rev() {
+                pending.push((child, Some(name.to_owned()), depth + 1));
             }
         }
     }

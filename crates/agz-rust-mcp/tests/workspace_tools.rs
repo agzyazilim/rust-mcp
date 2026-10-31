@@ -50,6 +50,7 @@ fn request(action: WorkspaceAction) -> WorkspaceRequest {
     WorkspaceRequest {
         dir: None,
         action,
+        skill: None,
         path: None,
         query: None,
         case_sensitive: true,

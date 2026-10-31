@@ -5,14 +5,11 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use agz_rust_mcp::{
-    diagnostics::{
-        DiagnosticDetail, RenderOptions, SuggestionApplicability, bounded_text, format_diagnostics,
-        machine_applicable_package, machine_applicable_package_with_snapshots,
-        parse_cargo_build_telemetry, parse_cargo_output, parse_compiler_diagnostics,
-        render_diagnostics,
-    },
-    knowledge::borrow_errors,
+use agz_rust_mcp::diagnostics::{
+    DiagnosticDetail, RenderOptions, SuggestionApplicability, bounded_text, format_diagnostics,
+    machine_applicable_package, machine_applicable_package_with_snapshots,
+    parse_cargo_build_telemetry, parse_cargo_output, parse_compiler_diagnostics,
+    render_diagnostics,
 };
 
 fn fixture(path: &str) -> PathBuf {
@@ -255,14 +252,6 @@ fn renders_bounded_utf8_safe_detail_levels_and_typed_json() {
     let text = bounded_text(&"é漢字".repeat(40), 17);
     assert!(text.len() <= 17);
     assert!(text.is_char_boundary(text.len()));
-}
-
-#[test]
-fn exposes_borrow_hints_for_compiler_codes() {
-    assert!(borrow_errors::hint_for("E0382").is_some());
-    assert!(borrow_errors::hint_for("E0596").is_some());
-    assert!(borrow_errors::hint_for("E9999").is_none());
-    assert!(borrow_errors::EXPLAIN_ADVICE.contains("rustc --explain"));
 }
 
 #[test]

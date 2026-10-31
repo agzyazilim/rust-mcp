@@ -5,13 +5,14 @@
 [araç ve yapılandırma referansının](tools.tr.md) arkasındaki süreç modelini
 açıklar. [Doğrulama ve benchmark protokolü](benchmark.tr.md) ile devam edin.
 
-`agz-rust-mcp`; RMCP stdio adaptörü, sınırlı alan servisleri ve denetimli dış
-süreçlerden oluşan tek bir Rust sürecidir. Uzak transport bağlantısı kabul etmez
-ve workspace kaynağına yazmaz.
+`agz-rust-mcp`; standart MCP stdio ve Streamable HTTP adaptörleri, sınırlı alan
+servisleri ve denetimli dış süreçlerden oluşan tek bir Rust sürecidir. HTTP yalnız
+loopback adresine bağlanır. Sunucu workspace kaynağına yazmaz.
 
 ## Veri Akışı
 
-1. `main` katı yapılandırmayı yükler ve RMCP'yi stdin/stdout üzerinde başlatır.
+1. `main` katı yapılandırmayı yükler ve varsayılan olarak RMCP'yi stdin/stdout
+   üzerinde başlatır; `server.transport="http"` ile `/mcp` HTTP uç noktasını sunar.
 2. Sunucu varsayılan olarak `2025-11-25` protokolüyle uzlaşır ve
    `2026-07-28` desteğini keşfedebilir.
 3. Client root'ları yapılandırılmış kök kümesini daraltır; her workspace ve
@@ -30,6 +31,8 @@ ve workspace kaynağına yazmaz.
 | Component | Responsibility |
 | --- | --- |
 | `server` | MCP araçları, kaynaklar, prompt'lar, task'lar, ilerleme, yanıt eşitliği. |
+| `transport` | Loopback Streamable HTTP, Host/Origin doğrulaması, servis ve gövde sınırları. |
+| `skills` | Çalıştırılabilir dosyaya gömülü sürümlü çevrimdışı iş akışları; araçlar, prompt'lar, kaynaklar ve isteğe bağlı export. |
 | `workspace` | Root yetkisi, paket seçimi, metadata, girdi kimliği. |
 | `gate` | Cargo hedefleri, ön kontrol, singleflight, cache, host lease'leri. |
 | `process` | Sınırlı çıktı, son süre, süreç grubu/Job Object, kurtarma journal'ı. |
@@ -48,6 +51,20 @@ istemci aynı alan işlemini eşzamanlı alır.
 Root değişikliği epoch değerini artırır. Eski root nesline bağlı iş iptal edilir
 ve root'a duyarlı cache yetkisi geçersiz olur. Client root'ları kimlik doğrulama
 değildir ve yapılandırılmış köklerde olmayan yolu yetkilendiremez.
+
+HTTP, modern durumsuz isteklerin önceki task'a devam edebilmesi veya context
+kapsülünü genişletebilmesi için alan durumunu süreç boyunca saklar. Her eski
+protokol oturumu veya modern istek ayrı client-root koordinatörü kullanır.
+Sınırlı yetki önbelleği, farklı kök kümelerinin birbirinin kanıtını geçersiz
+kılmasını önler; istemcinin root-change bildirimi kendi önceki yetki neslini
+geçersiz kılmayı sürdürür.
+
+Her süreç tek güvenilir kullanıcının alanını sunar. Task kimlikleri ve araç
+durumu bu alan içinde paylaşılır; HTTP oturumu ayrı kullanıcı hesabı değildir.
+Her güvenlik kimliği için ayrı sunucu süreci kullanılır. Uzak erişim loopback
+dinleyicisinin önünde kimlik doğrulamalı HTTPS proxy gerektirir. Tarayıcı Origin
+başlıkları reddedilir; proxy kabul edilen yerel Host değerini iletmelidir.
+Standart MCP SDK eski oturum kimliklerini ve modern istek metadata'sını yönetir.
 
 ## Yetki Modeli
 

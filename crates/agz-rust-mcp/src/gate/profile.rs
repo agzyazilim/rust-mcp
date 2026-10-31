@@ -75,17 +75,14 @@ impl ValidationOptions {
                 "targetTriple must be a built-in target triple, not a JSON path or flag".into(),
             );
         }
-        if let Some(filter) = &self.test_filter {
-            if target != GateTargetId::Test
+        if let Some(filter) = &self.test_filter
+            && (target != GateTargetId::Test
                 || filter.is_empty()
                 || filter.len() > 256
                 || filter.starts_with('-')
-                || filter.chars().any(char::is_control)
-            {
-                return Err(
-                    "testFilter is a bounded test-name substring for target=test only".into(),
-                );
-            }
+                || filter.chars().any(char::is_control))
+        {
+            return Err("testFilter is a bounded test-name substring for target=test only".into());
         }
         if self.runner == TestRunner::Nextest
             && !matches!(target, GateTargetId::Test | GateTargetId::All)

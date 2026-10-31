@@ -6,7 +6,7 @@
     clippy::too_many_lines
 )]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::fs;
@@ -18,6 +18,8 @@ use std::sync::{Arc, RwLock};
 use std::path::Prefix;
 
 use cap_std::fs::{Dir, File as CapabilityFile};
+
+const MAX_AUTHORITY_SCOPES: usize = 128;
 
 const DEFAULT_WALK_MAX_FILES: usize = 20_000;
 const DEFAULT_WALK_MAX_FILE_BYTES: u64 = 32 * 1024 * 1024;
@@ -756,6 +758,7 @@ pub struct RootGuard {
     configured: Vec<Arc<AuthorizedRoot>>,
     dependencies: Vec<Arc<AuthorizedRoot>>,
     client: RwLock<ClientEpoch>,
+    independent_authorities: bool,
 }
 
 #[derive(Debug)]
@@ -763,6 +766,7 @@ struct ClientEpoch {
     epoch: u64,
     state: Option<NormalizedClientRoots>,
     snapshot: Option<RootSnapshot>,
+    authorities: VecDeque<(NormalizedClientRoots, RootSnapshot)>,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -789,7 +793,9 @@ impl RootGuard {
                 epoch: 0,
                 state: None,
                 snapshot: None,
+                authorities: VecDeque::new(),
             }),
+            independent_authorities: false,
         })
     }
 
@@ -812,22 +818,30 @@ impl RootGuard {
         &self.dependencies
     }
 
+    /// Enables independent, bounded root authorities for clients sharing one HTTP server.
+    /// The default single-client mode retains global epoch invalidation.
+    pub(crate) fn with_independent_authorities(mut self, enabled: bool) -> Self {
+        self.independent_authorities = enabled;
+        self
+    }
+
     pub fn snapshot(&self, client_roots: ClientRoots) -> Result<RootSnapshot, RootError> {
         let normalized = normalize_client_roots(&client_roots)?;
         if let NormalizedClientRoots::Failed = normalized {
-            let mut state = self.client.write().map_err(|_| RootError::Poisoned)?;
-            state.epoch = state.epoch.saturating_add(1);
-            state.state = Some(normalized);
-            state.snapshot = None;
+            if !self.independent_authorities {
+                let mut state = self.client.write().map_err(|_| RootError::Poisoned)?;
+                state.advance_epoch()?;
+                state.state = Some(normalized);
+                state.snapshot = None;
+            }
             return Err(RootError::ClientRootsUnavailable);
         }
 
         {
-            let state = self.client.read().map_err(|_| RootError::Poisoned)?;
-            if state.state.as_ref() == Some(&normalized)
-                && let Some(snapshot) = &state.snapshot
+            let mut state = self.client.write().map_err(|_| RootError::Poisoned)?;
+            if let Some(snapshot) = state.cached_snapshot(&normalized, self.independent_authorities)
             {
-                return Ok(snapshot.clone());
+                return Ok(snapshot);
             }
         }
 
@@ -841,16 +855,23 @@ impl RootGuard {
         }
 
         let mut state = self.client.write().map_err(|_| RootError::Poisoned)?;
-        if state.state.as_ref() == Some(&normalized)
-            && let Some(snapshot) = &state.snapshot
-        {
-            return Ok(snapshot.clone());
+        if let Some(snapshot) = state.cached_snapshot(&normalized, self.independent_authorities) {
+            return Ok(snapshot);
         }
-        state.epoch = state.epoch.saturating_add(1);
         let snapshot = RootSnapshot {
-            epoch: state.epoch,
+            epoch: state.advance_epoch()?,
             roots: Arc::from(roots.into_boxed_slice()),
         };
+        if self.independent_authorities {
+            if state.authorities.len() == MAX_AUTHORITY_SCOPES {
+                // Eviction expires that scope's old handles; an explicit new
+                // request must validate its paths and obtain a fresh epoch.
+                state.authorities.pop_front();
+            }
+            state
+                .authorities
+                .push_back((normalized.clone(), snapshot.clone()));
+        }
         state.state = Some(normalized);
         state.snapshot = Some(snapshot.clone());
         Ok(snapshot)
@@ -865,15 +886,59 @@ impl RootGuard {
             .clone())
     }
 
+    /// Returns the latest allocated or invalidated epoch. HTTP clients can have
+    /// several current epochs; use `is_epoch_current` when validating a handle.
     pub fn current_epoch(&self) -> Result<u64, RootError> {
         Ok(self.client.read().map_err(|_| RootError::Poisoned)?.epoch)
     }
 
+    pub fn is_epoch_current(&self, epoch: u64) -> Result<bool, RootError> {
+        let state = self.client.read().map_err(|_| RootError::Poisoned)?;
+        Ok(if self.independent_authorities {
+            state
+                .authorities
+                .iter()
+                .any(|(_, snapshot)| snapshot.epoch == epoch)
+        } else {
+            state
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.epoch == epoch)
+        })
+    }
+
+    /// Explicit global revocation invalidates every client authority.
     pub fn invalidate_client_roots(&self) -> Result<u64, RootError> {
         let mut state = self.client.write().map_err(|_| RootError::Poisoned)?;
-        state.epoch = state.epoch.saturating_add(1);
+        state.advance_epoch()?;
         state.state = None;
         state.snapshot = None;
+        state.authorities.clear();
+        Ok(state.epoch)
+    }
+
+    /// Invalidates the exact authority last served to one connection. Keeping
+    /// its epoch avoids re-canonicalizing roots which may have disappeared or
+    /// become symlinks since the client announced a change.
+    pub(crate) fn invalidate_client_scope(&self, epoch: Option<u64>) -> Result<u64, RootError> {
+        if !self.independent_authorities {
+            return self.invalidate_client_roots();
+        }
+        let mut state = self.client.write().map_err(|_| RootError::Poisoned)?;
+        if let Some(epoch) = epoch {
+            state.advance_epoch()?;
+            state
+                .authorities
+                .retain(|(_, snapshot)| snapshot.epoch != epoch);
+            if state
+                .snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.epoch == epoch)
+            {
+                state.state = None;
+                state.snapshot = None;
+            }
+        }
         Ok(state.epoch)
     }
 
@@ -926,6 +991,41 @@ impl RootGuard {
         }
         roots.sort_by(|left, right| left.canonical.cmp(&right.canonical));
         Ok(roots)
+    }
+}
+
+impl ClientEpoch {
+    fn advance_epoch(&mut self) -> Result<u64, RootError> {
+        let Some(next) = self.epoch.checked_add(1) else {
+            // Never reuse an epoch or leave old authority valid if the
+            // monotonically increasing identity space is exhausted.
+            self.state = None;
+            self.snapshot = None;
+            self.authorities.clear();
+            return Err(RootError::ClientRootsUnavailable);
+        };
+        self.epoch = next;
+        Ok(next)
+    }
+
+    fn cached_snapshot(
+        &mut self,
+        roots: &NormalizedClientRoots,
+        independent: bool,
+    ) -> Option<RootSnapshot> {
+        if independent {
+            let index = self.authorities.iter().position(|(key, _)| key == roots)?;
+            let entry = self.authorities.remove(index)?;
+            let snapshot = entry.1.clone();
+            self.authorities.push_back(entry);
+            self.state = Some(roots.clone());
+            self.snapshot = Some(snapshot.clone());
+            Some(snapshot)
+        } else if self.state.as_ref() == Some(roots) {
+            self.snapshot.clone()
+        } else {
+            None
+        }
     }
 }
 
@@ -1246,6 +1346,117 @@ fn hex_value(value: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct RootFixture(PathBuf);
+
+    impl RootFixture {
+        fn new(count: usize) -> Self {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos();
+            let root = fs::canonicalize(std::env::temp_dir())
+                .expect("canonical temporary directory")
+                .join(format!("agz-authorities-{}-{nonce}", std::process::id()));
+            fs::create_dir(&root).expect("create root fixture");
+            for index in 0..count {
+                fs::create_dir(root.join(index.to_string())).expect("create authority directory");
+            }
+            Self(root)
+        }
+
+        fn client(&self, index: usize) -> ClientRoots {
+            ClientRoots::available([self.0.join(index.to_string())])
+        }
+
+        fn guard(&self, independent: bool) -> RootGuard {
+            RootGuard::new([self.0.clone()], std::iter::empty())
+                .expect("root guard")
+                .with_independent_authorities(independent)
+        }
+    }
+
+    impl Drop for RootFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn independent_authorities_survive_other_clients_and_revoke_only_the_notified_scope() {
+        let fixture = RootFixture::new(2);
+        let guard = fixture.guard(true);
+        let first = guard.snapshot(fixture.client(0)).expect("first authority");
+        let second = guard.snapshot(fixture.client(1)).expect("second authority");
+        assert_ne!(first.epoch(), second.epoch());
+        assert!(guard.is_epoch_current(first.epoch()).unwrap());
+        assert!(guard.is_epoch_current(second.epoch()).unwrap());
+        assert_eq!(
+            guard.snapshot(fixture.client(0)).unwrap().epoch(),
+            first.epoch()
+        );
+        assert!(matches!(
+            guard.snapshot(ClientRoots::failed()),
+            Err(RootError::ClientRootsUnavailable)
+        ));
+        guard.invalidate_client_scope(None).unwrap();
+        assert!(guard.is_epoch_current(first.epoch()).unwrap());
+        assert!(guard.is_epoch_current(second.epoch()).unwrap());
+
+        // Invalidation must still find the old authority if its path has gone
+        // away since the last successful request.
+        #[cfg(unix)]
+        fs::remove_dir(fixture.0.join("0")).expect("remove changed root");
+        guard.invalidate_client_scope(Some(first.epoch())).unwrap();
+        assert!(!guard.is_epoch_current(first.epoch()).unwrap());
+        assert!(guard.is_epoch_current(second.epoch()).unwrap());
+        #[cfg(unix)]
+        fs::create_dir(fixture.0.join("0")).expect("recreate root");
+        let refreshed = guard.snapshot(fixture.client(0)).unwrap();
+        assert!(refreshed.epoch() > second.epoch());
+        guard.invalidate_client_roots().unwrap();
+        assert!(!guard.is_epoch_current(refreshed.epoch()).unwrap());
+        assert!(!guard.is_epoch_current(second.epoch()).unwrap());
+    }
+
+    #[test]
+    fn bounded_authorities_expire_evicted_handles_and_keep_recent_scopes() {
+        let fixture = RootFixture::new(MAX_AUTHORITY_SCOPES + 1);
+        let guard = fixture.guard(true);
+        let epochs = (0..MAX_AUTHORITY_SCOPES)
+            .map(|index| guard.snapshot(fixture.client(index)).unwrap().epoch())
+            .collect::<Vec<_>>();
+        // Refresh the oldest scope so that the next-oldest one is evicted.
+        assert_eq!(
+            guard.snapshot(fixture.client(0)).unwrap().epoch(),
+            epochs[0]
+        );
+        let added = guard
+            .snapshot(fixture.client(MAX_AUTHORITY_SCOPES))
+            .unwrap();
+        assert!(guard.is_epoch_current(epochs[0]).unwrap());
+        assert!(!guard.is_epoch_current(epochs[1]).unwrap());
+        assert!(guard.is_epoch_current(added.epoch()).unwrap());
+        assert_eq!(
+            guard.client.read().unwrap().authorities.len(),
+            MAX_AUTHORITY_SCOPES
+        );
+        let restored = guard.snapshot(fixture.client(1)).unwrap();
+        assert!(restored.epoch() > added.epoch());
+        assert!(!guard.is_epoch_current(epochs[1]).unwrap());
+    }
+
+    #[test]
+    fn default_root_guard_retains_single_client_epoch_revocation() {
+        let fixture = RootFixture::new(2);
+        let guard = fixture.guard(false);
+        let first = guard.snapshot(fixture.client(0)).unwrap();
+        let second = guard.snapshot(fixture.client(1)).unwrap();
+        assert!(!guard.is_epoch_current(first.epoch()).unwrap());
+        assert!(guard.is_epoch_current(second.epoch()).unwrap());
+        guard.invalidate_client_scope(None).unwrap();
+        assert!(!guard.is_epoch_current(second.epoch()).unwrap());
+    }
 
     #[test]
     fn canonical_spelling_bridges_cargo_and_authority_paths() {

@@ -15,6 +15,7 @@ import tempfile
 
 
 from mcp_stdio import McpSession
+from toolchain import selected_toolchain
 
 
 def digest(path):
@@ -41,10 +42,10 @@ def fixture_at(path):
     return {name: digest(path / name) for name in sources}
 
 
-def sample(binary, cargo, fixture, state):
+def sample(binary, cargo, fixture, state, toolchain):
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGZ_RUST_MCP_")}
     env.pop("CARGO_TARGET_DIR", None)
-    env["RUSTUP_TOOLCHAIN"] = "1.88.0"
+    env["RUSTUP_TOOLCHAIN"] = toolchain
     args = [str(binary), "--allow-root", str(fixture), "--cargo-path", str(cargo),
             "--gate-cache", "isolated", "--gate-cache-dir", str(state / "gate"),
             "--gate-lease-dir", str(state / "leases"), "--telemetry-enabled", "false"]
@@ -63,6 +64,8 @@ def sample(binary, cargo, fixture, state):
 
 
 def compare_reports(baseline, report):
+    if baseline.get("rust") != report["rust"]:
+        raise ValueError("compiler toolchain differs or is absent from the baseline report")
     if baseline["fixtureSha256"] != report["fixtureSha256"] or len(baseline["samples"]) != len(report["samples"]):
         raise ValueError("baseline fixture or sample count does not match")
     for before, after in zip(baseline["samples"], report["samples"]):
@@ -88,15 +91,18 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--baseline-report", type=Path)
+    parser.add_argument("--toolchain", help="Rust toolchain (default: repository rust-toolchain.toml)")
     args = parser.parse_args()
+    toolchain = selected_toolchain(args.toolchain)
     fixture = args.fixture.resolve()
     hashes = fixture_at(fixture)
     with tempfile.TemporaryDirectory(prefix="agz-compact-state-") as directory:
-        samples = [sample(args.binary.resolve(), args.cargo.resolve(), fixture, Path(directory))
+        samples = [sample(args.binary.resolve(), args.cargo.resolve(), fixture, Path(directory), toolchain)
                    for _ in range(3)]
     assert fixture_at(fixture) == hashes
     report = {"metric": "MCP JSON-RPC response bytes, not tokens or runtime speed",
-              "binarySha256": digest(args.binary), "fixtureSha256": hashes, "samples": samples}
+              "binarySha256": digest(args.binary), "fixtureSha256": hashes,
+              "rust": toolchain, "samples": samples}
     if args.baseline_report:
         baseline = json.loads(args.baseline_report.read_text())
         report["comparison"] = compare_reports(baseline, report)

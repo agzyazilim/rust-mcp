@@ -19,8 +19,9 @@ cargo run -p xtask -- task-benchmark-smoke
 ```
 
 `protocol-smoke` gerçek stdio binary'sini başlatır; initialize, araç keşfi,
-belirli yapı/metin eşitliği, `2026-07-28` task oluşturma, ilerleme, iptal,
-terminal durum, eşzamanlı fallback ve fixture temizliğini denetler.
+yapı/metin eşitliği, gömülü tüm skilllerin `workspace` aracı, prompt ve resource
+üzerinden aynı içerik ve sağlama toplamıyla okunması, `2026-07-28` task oluşturma,
+ilerleme, iptal, terminal durum, eşzamanlı fallback ve fixture temizliğini denetler.
 
 `benchmark-smoke`, dondurulmuş temiz ve bozuk Rust fixture'larını oracle'a göre
 çalıştırır. Durum ile `passed` alanının uyumunu ve güncel davranışın korunmuş
@@ -57,6 +58,15 @@ kanıtı için tam platform ve paketleme kapılarını kullanın. Başarılı fi
 yalnızca seçilen testler için kanıttır; tüm workspace'in veya her feature
 birleşiminin geçtiğini göstermez.
 
+### Yerel Cargo ölçümlerinin toolchain seçimi
+
+`compact_response.py`, `request_latency.py`, `scope_selection.py` ve
+`verify_scope.py` betikleri Python 3.11 veya üzerini gerektirir; varsayılan Rust
+toolchain'ini `rust-toolchain.toml` dosyasından okur. Eski ölçümü tekrarlamak için
+`--toolchain <sürüm>` verin. Rapor seçilen toolchain'i kaydeder; karşılaştırma
+farklı toolchain'leri reddeder. İki kol için aynı seçimi kullanın. Tarihî ölçüm
+raporlarındaki sürümler değişmeden korunur.
+
 ## Çevrimdışı Workspace ve Araç Kataloğu Ölçümü
 
 Linux üzerinde önceden derlenmiş binary ile gerçek stdio `workspace`
@@ -84,22 +94,6 @@ yeni süreç başlatma ölçümü, soğuk dosya önbelleği ölçümü değildir
 azalması token sayısı değildir; bu fixture sonuçları tüm Rust projeleri veya
 modeller için performans iddiası oluşturmaz. Mevcut ölçüm betiği yalnız Linux'u
 destekler; sunucunun platform desteği bu nedenle daralmaz.
-
-## İsteğe Bağlı Eski İstemci Uyumluluğu
-
-OpenCode2 adaptörü ayrı bir uyumluluk kontrolünü korur:
-
-```bash
-npm install --global @opencode-ai/cli@0.0.0-beta-18743
-cargo run -p xtask -- opencode-smoke
-```
-
-Bu kontrol, sabitlenmiş host'u doğrudan ve gruplanmış yerel MCP
-yapılandırmalarıyla çalıştırır. Loopback sahte provider belirli araç çağrıları
-döndürür; ücretli veya dış model endpoint'i kullanılmaz. CI workflow'unun manuel
-`legacy_opencode` girdisi bu işi etkinleştirir. Release workflow'u için zorunlu
-değildir. Bu adaptörü değiştiren çalışmalar kontrolü yine çalıştırmalı ve
-sonucunu temel MCP uyumluluğundan ayrı bildirmelidir.
 
 ## Önceden Belirlenmiş Görev Benchmark Kapıları
 
@@ -161,7 +155,7 @@ En küçük yerel release kapısı:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --all-features --locked --no-fail-fast
-cargo +1.88.0 check --workspace --all-targets --all-features --locked
+cargo +1.91.0 check --workspace --all-targets --all-features --locked
 cargo build --release --locked
 cargo package -p agz-rust-mcp --locked
 cargo publish -p agz-rust-mcp --dry-run --locked

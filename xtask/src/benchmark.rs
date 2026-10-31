@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::{
     fmt::Write as _,
     fs::{self, File, OpenOptions},
@@ -112,7 +110,6 @@ pub struct BenchmarkEvidence {
     pub paid: bool,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize)]
 pub struct FrozenRunManifest {
     pub schema_version: u64,
@@ -130,7 +127,6 @@ pub struct FrozenRunManifest {
     pub scorer_version: String,
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize)]
 pub struct FrozenFixture {
     pub id: String,
@@ -277,7 +273,6 @@ impl LiveTrialAdapter for CommandLiveAdapter {
 }
 
 /// The result of the live preflight. No live work is started by this value.
-#[allow(dead_code)]
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum LiveRunDecision {
@@ -291,8 +286,7 @@ impl LiveRunDecision {
     }
 }
 
-/// A boxed async seam keeps benchmark orchestration independent of the Phase 3
-/// checker implementation while still allowing a real RMCP call by default.
+/// A boxed async result lets the benchmark use a real MCP client or a test adapter.
 pub type CheckFuture<'a> = Pin<Box<dyn Future<Output = Result<TypedOutcome>> + Send + 'a>>;
 
 pub trait RustMcpCheckAdapter: Send + Sync {
@@ -326,7 +320,6 @@ impl RustMcpCheckAdapter for ChildProcessRustMcp {
     }
 }
 
-#[allow(dead_code)]
 struct OwnedAdapter<F>(F);
 
 impl<F, Fut> RustMcpCheckAdapter for OwnedAdapter<F>
@@ -339,25 +332,10 @@ where
     }
 }
 
-/// Run the default provider-free smoke from the xtask repository root.
-#[allow(dead_code)]
-pub async fn run_benchmark_smoke() -> Result<BenchmarkEvidence> {
-    let root = repository_root()?;
-    run_benchmark_smoke_at(&root).await
-}
-
-/// Run the default provider-free smoke against an explicit repository root.
-#[allow(dead_code)]
-pub async fn run_benchmark_smoke_at(root: &Path) -> Result<BenchmarkEvidence> {
-    let adapter = ChildProcessRustMcp {
-        root: root.to_path_buf(),
-    };
-    run_benchmark_smoke_with_adapter(root, DEFAULT_REPETITIONS, &adapter).await
-}
-
-/// Run smoke with an owned-path closure. This is convenient for tests and for
-/// the temporary Phase 3 adapter while preserving the real default path above.
-#[allow(dead_code)]
+/// Run smoke with an owned-path closure while preserving the same fixture and oracle checks.
+///
+/// # Errors
+/// Returns an error if fixture validation, the local oracle, or the supplied checker fails.
 pub async fn run_benchmark_smoke_with<F, Fut>(root: &Path, adapter: F) -> Result<BenchmarkEvidence>
 where
     F: Fn(PathBuf) -> Fut + Send + Sync,
@@ -369,6 +347,9 @@ where
 
 /// Run smoke with a caller-owned RMCP/check adapter and a fixed repetition
 /// count. The adapter is called only after guard-free smoke setup succeeds.
+///
+/// # Errors
+/// Returns an error for invalid repetitions, unsafe fixtures, failed checker calls, or oracle mismatch.
 #[allow(clippy::too_many_lines)]
 pub async fn run_benchmark_smoke_with_repetitions<A>(
     root: &Path,
@@ -488,21 +469,11 @@ where
     })
 }
 
-/// Adapter-oriented spelling kept explicit for callers wiring the Phase 3
-/// checker. The repetition count is part of the frozen comparison input.
-pub async fn run_benchmark_smoke_with_adapter<A>(
-    root: &Path,
-    repetitions: u32,
-    adapter: &A,
-) -> Result<BenchmarkEvidence>
-where
-    A: RustMcpCheckAdapter,
-{
-    run_benchmark_smoke_with_repetitions(root, repetitions, adapter).await
-}
-
-/// The xtask entry point. Live requests are guarded before fixture or process
-/// work; valid live approval currently stops at the Phase 3 execution boundary.
+/// Run a provider-free smoke or an explicitly approved live adapter.
+/// Live requests are guarded before fixture or process work.
+///
+/// # Errors
+/// Returns an error for invalid arguments, failed benchmark checks, or unsafe evidence publication.
 pub async fn run(root: &Path, args: Vec<String>) -> Result<()> {
     let decision = guard_live_run(&args)?;
     if let LiveRunDecision::Approved(manifest) = decision {
@@ -525,7 +496,7 @@ pub async fn run(root: &Path, args: Vec<String>) -> Result<()> {
     let adapter = ChildProcessRustMcp {
         root: root.to_path_buf(),
     };
-    let evidence = run_benchmark_smoke_with_adapter(root, repetitions, &adapter).await?;
+    let evidence = run_benchmark_smoke_with_repetitions(root, repetitions, &adapter).await?;
     let run_manifest = smoke_run_manifest(root, &evidence)?;
     let results = serde_json::to_value(&evidence).context("serialize benchmark results")?;
     let report = smoke_report(&evidence);
@@ -538,6 +509,9 @@ pub async fn run(root: &Path, args: Vec<String>) -> Result<()> {
     Ok(())
 }
 
+///
+/// # Errors
+/// Returns an error for invalid provenance, rejected preflight, failed trials, or checkpoint failures.
 pub async fn run_live_benchmark_with_adapter<A>(
     root: &Path,
     manifest: &FrozenRunManifest,
@@ -633,6 +607,9 @@ where
     })
 }
 
+///
+/// # Errors
+/// Returns an error if status, scorer identity, counters, or output bounds violate the trial contract.
 pub fn validate_live_trial_result(result: &LiveTrialResult, scorer_version: &str) -> Result<()> {
     if result.schema_version != 1
         || result.scorer_version != scorer_version
@@ -710,6 +687,9 @@ fn live_report(evidence: &LiveBenchmarkEvidence) -> String {
 
 /// Reject a live request unless both a frozen manifest and a separate explicit
 /// approval flag are present. This function performs no child/network work.
+///
+/// # Errors
+/// Returns an error for invalid arguments or a live request without explicit approval and a valid manifest.
 pub fn guard_live_run<I, S>(args: I) -> Result<LiveRunDecision>
 where
     I: IntoIterator<Item = S>,
@@ -783,27 +763,15 @@ where
 
 /// Validate the immutable historical legacy manifest embedded in the binary.
 /// It is evidence only and is never executed.
+///
+/// # Errors
+/// Returns an error if the embedded historical manifest checksum or schema is invalid.
 pub fn validate_legacy_manifest() -> Result<LegacyValidation> {
     let expected = LEGACY_MANIFEST_SHA256
         .split_whitespace()
         .next()
         .context("historical manifest checksum file is empty")?;
     validate_legacy_manifest_bytes(LEGACY_MANIFEST.as_bytes(), expected)
-}
-
-/// Validate a legacy manifest and its expected SHA-256 without starting its
-/// historical runtime. This is public for focused integrity tests.
-#[allow(dead_code)]
-pub fn validate_legacy_manifest_file(
-    path: &Path,
-    expected_checksum: &str,
-) -> Result<LegacyValidation> {
-    let metadata = fs::symlink_metadata(path).context("read historical manifest metadata")?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        bail!("historical manifest must be a regular file");
-    }
-    let bytes = fs::read(path).context("read historical manifest")?;
-    validate_legacy_manifest_bytes(&bytes, expected_checksum)
 }
 
 /// Compare the complete typed status contract. Unavailable results are not
@@ -825,6 +793,9 @@ pub fn compare_typed_outcomes(expected: &TypedOutcome, actual: &TypedOutcome) ->
 
 /// Atomically publish a validated evidence bundle below `benchmark/results`.
 /// A failed writer removes only its own temporary directory.
+///
+/// # Errors
+/// Returns an error for invalid run identity, unsafe output paths, conflicting evidence, or filesystem failures.
 pub fn publish_evidence(
     root: &Path,
     run: &Value,
@@ -918,7 +889,10 @@ fn write_live_checkpoint_locked(
     result
 }
 
-pub(crate) fn remove_live_checkpoints(root: &Path, run_id: &str) -> Result<()> {
+///
+/// # Errors
+/// Returns an error if checkpoint paths are unsafe or existing checkpoints cannot be removed.
+pub fn remove_live_checkpoints(root: &Path, run_id: &str) -> Result<()> {
     let results_root = root.join("benchmark").join("results").join("stage7");
     let prefix = format!(".live-{run_id}-checkpoint-");
     let metadata = match fs::symlink_metadata(&results_root) {
@@ -1026,6 +1000,9 @@ async fn cargo_oracle(directory: &Path) -> Result<TypedOutcome> {
     classify_cargo_oracle(output.status.success(), &output.stdout, &output.stderr)
 }
 
+///
+/// # Errors
+/// Returns an error when Cargo output does not establish a compiler pass or a real compiler failure.
 pub fn classify_cargo_oracle(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<TypedOutcome> {
     let reason = String::from_utf8_lossy(stderr).into_owned();
     if success {
@@ -1092,7 +1069,10 @@ fn parse_repetitions(args: &[String]) -> Result<u32> {
     Ok(repetitions)
 }
 
-pub(crate) fn smoke_run_manifest(root: &Path, evidence: &BenchmarkEvidence) -> Result<Value> {
+///
+/// # Errors
+/// Returns an error when source identity, fixture provenance, or manifest serialization fails.
+pub fn smoke_run_manifest(root: &Path, evidence: &BenchmarkEvidence) -> Result<Value> {
     let fixture_values: Vec<Value> = evidence
         .fixtures
         .iter()
@@ -1144,7 +1124,7 @@ pub(crate) fn smoke_run_manifest(root: &Path, evidence: &BenchmarkEvidence) -> R
     }))
 }
 
-pub(crate) fn smoke_run_id(
+pub fn smoke_run_id(
     source_commit: &str,
     source_dirty: bool,
     source_checksum: &str,
@@ -1162,10 +1142,10 @@ pub(crate) fn smoke_run_id(
     format!("stage7-smoke-v6-{run_checksum}")
 }
 
-pub(crate) fn relevant_source_checksum(
-    root: &Path,
-    evidence: &BenchmarkEvidence,
-) -> Result<String> {
+///
+/// # Errors
+/// Returns an error if required source inputs cannot be read or contain unsafe filesystem entries.
+pub fn relevant_source_checksum(root: &Path, evidence: &BenchmarkEvidence) -> Result<String> {
     let fixtures = evidence
         .fixtures
         .iter()
@@ -1471,14 +1451,6 @@ fn required_string_array(value: &Value, field: &str) -> Result<Vec<String>> {
                 .with_context(|| format!("frozen run manifest field {field} contains a non-string"))
         })
         .collect()
-}
-
-#[allow(dead_code)]
-fn repository_root() -> Result<PathBuf> {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .map(Path::to_path_buf)
-        .context("xtask must live directly below the repository root")
 }
 
 fn canonical_directory(path: &Path) -> Result<PathBuf> {
