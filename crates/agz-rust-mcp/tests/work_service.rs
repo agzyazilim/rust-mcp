@@ -107,9 +107,11 @@ impl Fixture {
     }
 
     async fn execute(&self, request: WorkRequest) -> WorkOutcome {
-        self.work
-            .execute(request, &self.workspace(), CancellationToken::new(), None)
-            .await
+        Box::pin(
+            self.work
+                .execute(request, &self.workspace(), CancellationToken::new(), None),
+        )
+        .await
     }
 }
 
