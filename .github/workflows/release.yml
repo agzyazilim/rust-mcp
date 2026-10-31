@@ -172,7 +172,7 @@ jobs:
           - os: ubuntu-24.04
             platform: linux-x86_64
             binary: agz-rust-mcp
-          - os: macos-14
+          - os: macos-15
             platform: macos-arm64
             binary: agz-rust-mcp
           - os: windows-2025
