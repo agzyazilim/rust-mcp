@@ -7,9 +7,9 @@
 - [ ] `cargo fmt --all --check`
 - [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`
 - [ ] `cargo test --workspace --all-targets --all-features --locked --no-fail-fast`
-- [ ] `cargo +1.88.0 check --workspace --all-targets --all-features --locked`
-- [ ] Relevant protocol, client-integration, and benchmark smokes
-- [ ] Real adapter and `cargo deny` checks when applicable
+- [ ] `cargo +1.91.0 check --workspace --all-targets --all-features --locked`
+- [ ] Relevant stdio/Streamable HTTP protocol tests and benchmark smokes
+- [ ] Real Rust Analyzer/documentation integrations and `cargo deny` checks when applicable
 
 ## Safety
 

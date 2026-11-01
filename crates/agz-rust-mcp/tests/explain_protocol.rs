@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use rmcp::{
     ServiceExt,
     model::{
-        CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientInfo,
+        CallToolRequestParams, CallToolResponse, CallToolResult, ClientCapabilities, ClientConfig,
         Implementation,
     },
 };
@@ -119,8 +119,8 @@ fn spawn_server(config: Config) -> (tokio::io::DuplexStream, tokio::task::JoinHa
     (client_transport, task)
 }
 
-fn client_info() -> ClientInfo {
-    ClientInfo::new(
+fn client_info() -> ClientConfig {
+    ClientConfig::new(
         ClientCapabilities::default(),
         Implementation::new("agz-rust-mcp-explain-test", "0.1.0"),
     )

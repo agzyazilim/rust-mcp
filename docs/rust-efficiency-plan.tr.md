@@ -53,9 +53,9 @@ girdi kimliği aşamasınındır; model kalitesi, token veya toplam derleme iddi
 
 ## 6. İsteğe bağlı hızlandırma
 
-Nextest 0.9.143 açık seçimdir. Eksik/yanlış sürümde sessiz geri dönüş yoktur.
+Nextest 0.9.150 açık seçimdir. Eksik/yanlış sürümde sessiz geri dönüş yoktur.
 Filtreli test tam başarı sayılmaz; `all` ayrıca Cargo doctest çalıştırır.
-Sccache 0.17.0 için açık ve mutlak `RUSTC_WRAPPER` gerekir. Unix soketli önbellek
+Sccache 0.19.0 için açık ve mutlak `RUSTC_WRAPPER` gerekir. Unix soketli önbellek
 sunucusu süreç yöneticisine aittir; derleme istemci tarafında gözetilen süreç
 ağacında kalır. Yerel/sınırlı önbellek kullanılır, uzak/dağıtık ayarlar aktarılmaz,
 incremental seçimi değiştirilmez. Gözetilen Sccache kipi şu anda Unix gerektirir;

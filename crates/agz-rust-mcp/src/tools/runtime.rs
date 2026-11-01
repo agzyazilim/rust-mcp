@@ -1119,11 +1119,11 @@ fn adapter_digest(
         hasher.update([0]);
     }
     hasher.update(workload.name.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 fn measured_values(samples: &[RuntimeSample], side: &str) -> Vec<u64> {

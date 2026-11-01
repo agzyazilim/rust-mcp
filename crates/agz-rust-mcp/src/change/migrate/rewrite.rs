@@ -346,12 +346,12 @@ pub(crate) fn prev_significant(tokens: &[Token], index: usize) -> Option<usize> 
 pub(crate) fn ancestors(tokens: &[Token], offset: usize) -> Vec<usize> {
     let mut result = Vec::new();
     for (index, token) in tokens.iter().enumerate() {
-        if token.is_open() {
-            if let Some(close) = token.pair {
-                if token.start < offset && offset < tokens[close].start {
-                    result.push(index);
-                }
-            }
+        if token.is_open()
+            && let Some(close) = token.pair
+            && token.start < offset
+            && offset < tokens[close].start
+        {
+            result.push(index);
         }
     }
     result

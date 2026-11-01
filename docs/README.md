@@ -2,7 +2,7 @@
 
 English | [Türkçe](README.tr.md)
 
-**An AGZ Yazılım product.** `agz-rust-mcp` is a standalone stdio MCP server for
+**An AGZ Yazılım product.** `agz-rust-mcp` is a standalone stdio and Streamable HTTP MCP server for
 bounded Rust correctness grounded in Cargo and rustc.
 
 This index defines the reading path. Follow it in order the first time; each
@@ -12,7 +12,7 @@ step links to its Turkish counterpart and to the previous and next documents.
 
 | Step | Document | What it covers |
 | --- | --- | --- |
-| 1 | [Install and client setup](install.md) | Every install method, per-OS notes, OpenCode2 and Codex configuration, verification, and troubleshooting. |
+| 1 | [Install and client setup](install.md) | Every install method, per-OS notes, client-independent connections and built-in skills, verification, and troubleshooting. |
 | 2 | [Tools and configuration](tools.md) | Tool catalog, actions, result semantics, and the complete configuration reference. |
 | 3 | [Architecture](architecture.md) | Process model, data flow, protocol lifecycle, authority model, and residual risk. |
 | 4 | [Validation and benchmark protocol](benchmark.md) | Provider-free smokes, task benchmark gates, evidence layout, and the release gate. |

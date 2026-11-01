@@ -7,7 +7,8 @@
 [English](README.md) | Türkçe
 
 **AGZ Yazılım ürünüdür.** `agz-rust-mcp`, Cargo ve rustc çıktısına dayanan
-genel amaçlı Rust geliştirme için bağımsız bir stdio MCP sunucusudur. Projeyi
+genel amaçlı Rust geliştirme için stdio ve Streamable HTTP taşımalı bağımsız bir
+MCP sunucusudur. Projeyi
 çevrimdışı keşfeder, ilgili kaynak bağlamını ve derleyici hatalarını toplar,
 seçili testleri ve binary/example hedeflerini çalıştırır. Tam sürümlü bağımlılık
 belgeleri, Rust Analyzer ve kaynağa yazmayan değişiklik paketleri derin
@@ -48,7 +49,7 @@ sonuç durumları için [tam referansı](docs/tools.tr.md#gunluk-rust-akisi) oku
 # sürümden indirin, betiği doğrulayın, sonra çalıştırın
 bash install.sh
 
-# crates.io (Rust 1.88.0 veya üzeri gerekir)
+# crates.io (Rust 1.91.0 veya üzeri gerekir)
 cargo install agz-rust-mcp --locked
 agz-rust-mcp --version
 ```
@@ -64,30 +65,49 @@ sorun giderme: [docs/install.tr.md](docs/install.tr.md) ·
 
 ## MCP İstemci Ayarı
 
-Güncel kaynak dört çevrimdışı skill de içerir: `agz-rust-workflow`,
-`agz-rust-repair`, `agz-rust-refactor` ve `agz-rust-performance`. Tek çalıştırılabilir
-dosya, araçlarla iş akışlarını MCP prompt/resource üzerinden sunar; ikinci bir
-MCP gerekmez. Dosya tabanlı istemciler `agz-rust-mcp skills export` kullanabilir.
-[Paketli skilller](docs/install.tr.md#paketli-skilller-güncel-kaynak) bölümüne bakın.
-Paketli skilller `0.4.0` ile gelir; `0.3.0` binary'lerinde bulunmaz.
+Yerel stdio MCP destekleyen istemcinizin kendi sunucu yapılandırma biçiminde
+kurulu çalıştırılabilir dosyayı aşağıdaki alanlarla tanımlayın:
 
-| İstemci | Yapılandırma | Rehber |
-| --- | --- | --- |
-| ZCode | `~/.zcode/cli/config.json` → `mcp.servers.rust` | [ZCode](docs/install.tr.md#zcode-zcodecliconfigjson) |
-| OpenCode | `opencode.jsonc` → `mcp.rust` | [OpenCode](docs/install.tr.md#opencode-opencodejsonc) |
-| OpenCode2 | `opencode.jsonc` → `mcp.servers.rust` | [OpenCode2](docs/install.tr.md#opencode2-opencodejsonc) |
-| Codex | `~/.codex/config.toml` → `mcp_servers.rust` | [Codex](docs/install.tr.md#codex-codexconfigtoml) |
+```json
+{
+  "command": "agz-rust-mcp",
+  "args": ["--allow-root", "/absolute/path/to/project"],
+  "env": {"AGZ_RUST_MCP_SERVER__TOOLSET": "core"}
+}
+```
 
-İstemcinize ait örneği kullanın; OpenCode ve OpenCode2'nin biçimleri farklıdır.
-Hepsi kurulu `agz-rust-mcp` binary'sini başlatır. Bağlamadan önce bir kez
-`agz-rust-mcp --version` çalıştırın; istemcinin `PATH` değeri farklıysa mutlak
-yol kullanın.
+HTTP kullanan istemci için aynı binary'yi yerel Streamable HTTP sunucusu olarak
+başlatın ve MCP URL'sini `http://127.0.0.1:8787/mcp` olarak tanımlayın:
 
-Kanonik çalışma dizini varsayılan yetkili köktür. İstemci başka yerde
-başlatılıyorsa tekrarlanan `--allow-root` argümanlarıyla açık kökler ekleyin;
-istemcinin MCP kökleri yapılandırılmış erişimi daraltabilir, genişletemez.
-İstemci bazlı kurulum için
-[docs/install.tr.md](docs/install.tr.md) dosyasına bakın.
+```bash
+agz-rust-mcp --transport http --http-bind 127.0.0.1:8787 \
+  --allow-root /absolute/path/to/project
+```
+
+HTTP dinleyicisi yalnız loopback adreslerine bağlanır. `2025-11-25` istemcilerinin
+oturum yaşam döngüsünü ve durumsuz `2026-07-28` protokolünü destekler. Görünen araç
+önekleri, yapılandırma dosyası konumu ve otomatik prompt seçimi istemciye aittir;
+sunucu bunlara bağımlı değildir. Kanonik çalışma dizini varsayılan yetkili köktür;
+istemcinin bildirdiği kökler yapılandırılmış erişimi yalnız daraltabilir.
+[Bağlantı ayrıntıları](docs/install.tr.md#mcp-istemci-ayarı).
+
+## Yerleşik skilller
+
+Çalıştırılabilir dosyada dört çevrimdışı skill bulunur: `agz-rust-workflow`,
+`agz-rust-repair`, `agz-rust-refactor` ve `agz-rust-performance`.
+Üç standart MCP arayüzünden hemen kullanılabilirler:
+
+- Araçlar: `workspace(action="skills")` kataloğu listeler;
+  `workspace(action="skills", skill="agz-rust-workflow")` içeriği okur.
+- Prompt'lar: `prompts/list` ve `prompts/get`, `workflow`, `repair`,
+  `refactor` ve `performance` akışlarını sunar.
+- Kaynaklar: `resources/read`, `agz-rust-mcp://skills/<skill-name>` adresini okur.
+
+Yalnız araçları gösteren bir istemci de tüm skill içeriğine erişir. Sürüm ve
+SHA-256 bilgileri kullanılan yerleşik talimatları tanımlar. Skill kurulumu veya
+ayrı bir MCP gerekmez. İsteğe bağlı `agz-rust-mcp skills export --dir <new-directory>`
+komutu dosya skilllerini destekleyen istemciler için çıktı üretir; mevcut
+dosyaların üzerine yazmaz. [Yerleşik skilller](docs/install.tr.md#yerleşik-skilller).
 
 ## Belgeler
 
@@ -112,45 +132,45 @@ Tam okuma yolunu içeren iki dilli dizin:
 | --- | --- |
 | Crate, binary, server | `agz-rust-mcp` |
 | MCP Registry | `io.github.agzyazilim/rust-mcp` |
-| Kaynak sürümü | `0.5.0` |
+| Kaynak sürümü | `0.6.0` |
 | İlk sürüm | `0.1.0` |
 | Release tag | `agz-rust-mcp-v<version>` |
-| Rust edition / MSRV | `2024` / `1.88.0` |
-| Rust MCP SDK | `rmcp` `3.1.4` |
+| Rust edition / MSRV | `2024` / `1.91.0` |
+| Rust MCP SDK | `rmcp` `3.8.0` |
 | Varsayılan / keşfedilen protokol | `2025-11-25` / `2026-07-28` |
 
 MCP paket sahipliği kaydı: `mcp-name: io.github.agzyazilim/rust-mcp`.
 
 ## Araçlar
 
-MCP istemcileri araç adlarına `rust_*` gibi önekler ekleyebilir; bağlı
-sunucunun araç kataloğunda dönen adları kullanın.
+Aşağıdakiler sunucunun tam araç adlarıdır. `tools/list` yanıtındaki adları
+kullanın; istemci görünümde kendi ad alanını veya önekini ekleyebilir.
 
-| MCP tool | Example prefixed name | Default | Amaç |
-| --- | --- | --- | --- |
-| `workspace` | `rust_workspace` | `enabled` | Cargo veya Rust Analyzer başlatmadan manifest/lockfile incele, kaynak ara ve kesit oku. |
-| `test` | `rust_test` | `enabled` | Tam ad, ignored-test seçenekleri ve sınırlı süreyle test keşfet, derle veya çalıştır. |
-| `run` | `rust_run` | `enabled` | Tam seçilmiş Cargo binary/example hedefini gerçek argümanlar, süre ve çıktı sınırıyla çalıştır. |
-| `check` | `rust_check` | `enabled` | Sınırlı Cargo check, Clippy, test, docs veya tam kapıyı çalıştırır. |
-| `profile` | `rust_profile` | `enabled` | Gözlenen Cargo yeniden derleme davranışını analiz eder ve ölçülmemiş hız iddiası kurmadan sınırlı derleme kanıtını karşılaştırır. |
-| `audit` | `rust_audit` | `enabled` | Rust kaynağını sınırlı statik bulgular için tarar. |
-| `crate_lookup` | `rust_crate_lookup` | `enabled` | Crate adını ve isteğe bağlı tam sürümü crates.io üzerinde doğrular. |
-| `docs` | `rust_docs` | `enabled` | Tam sürüm belgesini cache, yerel kaynak veya docs.rs üzerinden çözer. |
-| `context` | `rust_context` | `enabled` | Öğe başına nedeniyle revizyona bağlı anlamsal bağlam kapsülü hazırlar, genişletir veya farkını üretir. |
-| `api` | `rust_api` | `enabled` | Sınırlı analiz kanıtıyla API imzasını çözer veya aday kod parçasını workspace yapılandırmasının yalıtılmış kopyasında tip kontrolünden geçirir. |
-| `explain` | `rust_explain` | `enabled` | Makro açılım kaynağını, trait yükümlülüklerini veya cfg etkinliğini açıklar. |
-| `verify` | `rust_verify` | `enabled` | Sınırlı feature, hedef, toolchain ve aşama matrisini planlar veya çalıştırır. |
-| `symbol` | `rust_symbol` | `enabled` | Bir sembol için Rust Analyzer hover verisini okur. |
-| `references` | `rust_references` | `enabled` | Sınırlı referansları bulur. |
-| `definition` | `rust_definition` | `enabled` | Seçilen tanımı bulur. |
-| `symbols` | `rust_symbols` | `enabled` | Bir Rust dosyasındaki sembolleri listeler. |
-| `implementations` | `rust_implementations` | `enabled` | Uygulamaları bulur. |
-| `hierarchy` | `rust_hierarchy` | `enabled` | Sınırlı çağrı hiyerarşisini izler. |
-| `rename` | `rust_rename` | `enabled` | Uygulamadan doğrulanmış yeniden adlandırma paketi üretir. |
-| `refactor` | `rust_refactor` | `enabled` | Uygulamadan doğrulanmış refactor paketi üretir. |
-| `change` | `rust_change` | `enabled` | Workspace'e yazmadan sunucuya ait scratch alanında revizyona bağlı changeset oluşturur, uygular, göç ettirir ve doğrular. |
-| `repair` | `rust_repair` | `enabled` | Başarısız bir change revizyonu için derleyici güdümlü onarım adaylarını analiz eder, dener, karşılaştırır ve küçültür; workspace'e yazmaz. |
-| `work` | `rust_work` | `enabled` | Tipli bir intent'i açık kapılar ve bütçelerle change/validate üzerinden yürütür; dürüst kapı kanıtı veya sınırlı tek kullanımlık handoff döndürür. |
+| MCP tool | Default | Amaç |
+| --- | --- | --- |
+| `workspace` | `enabled` | Yerleşik skillleri oku, manifest/lockfile incele, çevrimdışı kaynak ara ve kesit oku. |
+| `test` | `enabled` | Tam ad, ignored-test seçenekleri ve sınırlı süreyle test keşfet, derle veya çalıştır. |
+| `run` | `enabled` | Tam seçilmiş Cargo binary/example hedefini gerçek argümanlar, süre ve çıktı sınırıyla çalıştır. |
+| `check` | `enabled` | Sınırlı Cargo check, Clippy, test, docs veya tam kapıyı çalıştırır. |
+| `profile` | `enabled` | Gözlenen Cargo yeniden derleme davranışını analiz eder ve ölçülmemiş hız iddiası kurmadan sınırlı derleme kanıtını karşılaştırır. |
+| `audit` | `enabled` | Rust kaynağını sınırlı statik bulgular için tarar. |
+| `crate_lookup` | `enabled` | Crate adını ve isteğe bağlı tam sürümü crates.io üzerinde doğrular. |
+| `docs` | `enabled` | Tam sürüm belgesini cache, yerel kaynak veya docs.rs üzerinden çözer. |
+| `context` | `enabled` | Öğe başına nedeniyle revizyona bağlı anlamsal bağlam kapsülü hazırlar, genişletir veya farkını üretir. |
+| `api` | `enabled` | Sınırlı analiz kanıtıyla API imzasını çözer veya aday kod parçasını workspace yapılandırmasının yalıtılmış kopyasında tip kontrolünden geçirir. |
+| `explain` | `enabled` | Makro açılım kaynağını, trait yükümlülüklerini veya cfg etkinliğini açıklar. |
+| `verify` | `enabled` | Sınırlı feature, hedef, toolchain ve aşama matrisini planlar veya çalıştırır. |
+| `symbol` | `enabled` | Bir sembol için Rust Analyzer hover verisini okur. |
+| `references` | `enabled` | Sınırlı referansları bulur. |
+| `definition` | `enabled` | Seçilen tanımı bulur. |
+| `symbols` | `enabled` | Bir Rust dosyasındaki sembolleri listeler. |
+| `implementations` | `enabled` | Uygulamaları bulur. |
+| `hierarchy` | `enabled` | Sınırlı çağrı hiyerarşisini izler. |
+| `rename` | `enabled` | Uygulamadan doğrulanmış yeniden adlandırma paketi üretir. |
+| `refactor` | `enabled` | Uygulamadan doğrulanmış refactor paketi üretir. |
+| `change` | `enabled` | Workspace'e yazmadan sunucuya ait scratch alanında revizyona bağlı changeset oluşturur, uygular, göç ettirir ve doğrular. |
+| `repair` | `enabled` | Başarısız bir change revizyonu için derleyici güdümlü onarım adaylarını analiz eder, dener, karşılaştırır ve küçültür; workspace'e yazmaz. |
+| `work` | `enabled` | Tipli bir intent'i açık kapılar ve bütçelerle change/validate üzerinden yürütür; dürüst kapı kanıtı veya sınırlı tek kullanımlık handoff döndürür. |
 
 Her araç belirli yapıda veri ve ona eşdeğer, boyutu sınırlı metin döndürür. Dış
 veri `untrustedData` altında tutulur. Derleme hatası, bulunamayan crate veya
@@ -165,6 +185,8 @@ dosyası ve varsayılanlardır. Ortam anahtarları bölümler arasında `__` kul
 
 | Key | Default | Anlam |
 | --- | --- | --- |
+| `server.transport` | `stdio` | MCP taşıması: `stdio` veya `http`. |
+| `server.http_bind` | `127.0.0.1:8787` | HTTP `/mcp` uç noktası için loopback adresi. |
 | `server.allow_roots` | canonical CWD | Workspace okuma/komut sınırı. |
 | `server.allow_dependency_roots` | empty | Açık dış path-dependency kökleri. |
 | `gate.hard_timeout_ms` | `600000` | Cargo işlemi son süresi. |
@@ -210,7 +232,7 @@ uyarınca özel bildirin.
 
 - Repository: https://github.com/agzyazilim/rust-mcp
 - Crate: https://crates.io/crates/agz-rust-mcp
-- SDK docs: https://docs.rs/rmcp/3.1.4/rmcp/
+- SDK docs: https://docs.rs/rmcp/3.8.0/rmcp/
 - MCP `2025-11-25`: https://modelcontextprotocol.io/specification/2025-11-25
 - MCP `2026-07-28`: https://modelcontextprotocol.io/specification/2026-07-28
 

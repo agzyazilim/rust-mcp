@@ -174,6 +174,8 @@ pub struct MetadataControl {
     supervisor: ProcessSupervisor,
     runtime: Handle,
     supervised_sccache: bool,
+    #[cfg(test)]
+    test_clock: Option<Arc<Mutex<Instant>>>,
 }
 
 impl MetadataControl {
@@ -190,6 +192,8 @@ impl MetadataControl {
             supervisor,
             runtime,
             supervised_sccache: false,
+            #[cfg(test)]
+            test_clock: None,
         }
     }
 
@@ -203,10 +207,18 @@ impl MetadataControl {
         if self.cancellation.is_cancelled() {
             return Err(MetadataError::Cancelled);
         }
-        if Instant::now() >= self.deadline {
+        if self.now() >= self.deadline {
             return Err(MetadataError::TimedOut);
         }
         Ok(())
+    }
+
+    fn now(&self) -> Instant {
+        #[cfg(test)]
+        if let Some(clock) = &self.test_clock {
+            return *clock.lock().expect("metadata test clock");
+        }
+        Instant::now()
     }
 }
 
@@ -649,10 +661,10 @@ impl<R: MetadataRunner> MetadataService<R> {
             control,
             authorized_execution,
         );
-        if result.is_ok() {
-            if let Err(error) = checkpoint(control) {
-                result = Err(error);
-            }
+        if result.is_ok()
+            && let Err(error) = checkpoint(control)
+        {
+            result = Err(error);
         }
         if result.is_ok() {
             // Do not publish a snapshot under a key captured before a target
@@ -724,7 +736,7 @@ impl<R: MetadataRunner> MetadataService<R> {
     pub fn is_current(&self, snapshot: &WorkspaceSnapshot) -> Result<bool, MetadataError> {
         Ok(
             self.generation(&snapshot.package_root)? == snapshot.generation
-                && self.guard.current_epoch()? == snapshot.epoch,
+                && self.guard.is_epoch_current(snapshot.epoch)?,
         )
     }
 
@@ -947,9 +959,11 @@ impl<R: MetadataRunner> MetadataService<R> {
     }
 
     fn check_epoch(&self, expected: u64) -> Result<(), MetadataError> {
-        let actual = self.guard.current_epoch()?;
-        if actual != expected {
-            return Err(MetadataError::RootEpochChanged { expected, actual });
+        if !self.guard.is_epoch_current(expected)? {
+            return Err(MetadataError::RootEpochChanged {
+                expected,
+                actual: self.guard.current_epoch()?,
+            });
         }
         Ok(())
     }
@@ -1060,7 +1074,7 @@ fn wait_for_flight(
                 .map_err(|_| MetadataError::Poisoned)?;
             continue;
         };
-        let remaining = control.deadline.saturating_duration_since(Instant::now());
+        let remaining = control.deadline.saturating_duration_since(control.now());
         if remaining.is_zero() {
             return Err(MetadataError::TimedOut);
         }
@@ -1601,6 +1615,7 @@ mod tests {
     struct DeadlineSuccessRunner {
         metadata: MetadataRun,
         calls: Arc<AtomicUsize>,
+        clock: Arc<Mutex<Instant>>,
     }
 
     impl MetadataRunner for DeadlineSuccessRunner {
@@ -1616,19 +1631,9 @@ mod tests {
             control: &MetadataControl,
         ) -> Result<MetadataRun, MetadataError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
-            let lock = Mutex::new(());
-            let mut guard = lock.lock().expect("deadline lock");
-            let ready = Condvar::new();
-            // The mock must return late, even after a spurious or rounded wake.
-            while Instant::now() < control.deadline {
-                let (next, _) = ready
-                    .wait_timeout(
-                        guard,
-                        control.deadline.saturating_duration_since(Instant::now()),
-                    )
-                    .expect("deadline wait");
-                guard = next;
-            }
+            // Expire only after the runner has started. Preflight filesystem
+            // latency must not turn this into a timeout-before-execution test.
+            *self.clock.lock().expect("metadata test clock") = control.deadline;
             Ok(self.metadata.clone())
         }
     }
@@ -1799,17 +1804,18 @@ mod tests {
     async fn timed_out_owner_late_success_is_not_published_to_cache() {
         let (_workspace, guard, selection, metadata) = fixture();
         let calls = Arc::new(AtomicUsize::new(0));
+        let now = Instant::now();
+        let clock = Arc::new(Mutex::new(now));
         let service = MetadataService::with_runner(
             guard,
             DeadlineSuccessRunner {
                 metadata,
                 calls: Arc::clone(&calls),
+                clock: Arc::clone(&clock),
             },
         );
-        let control = control(
-            Instant::now() + Duration::from_millis(20),
-            CancellationToken::new(),
-        );
+        let mut control = control(now + Duration::from_millis(20), CancellationToken::new());
+        control.test_clock = Some(clock);
 
         assert!(matches!(
             service.acquire_controlled(&selection, "cargo", &control),

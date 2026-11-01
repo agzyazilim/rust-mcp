@@ -14,7 +14,7 @@ body:
     attributes:
       label: Version or commit
       description: Include the binary version, crate version, or exact commit.
-      placeholder: agz-rust-mcp-v0.1.1 or abc1234
+      placeholder: agz-rust-mcp-v0.6.0 or abc1234
     validations:
       required: true
   - type: dropdown
@@ -33,15 +33,15 @@ body:
     attributes:
       label: Rust toolchain
       description: Include rustc/Cargo and rust-analyzer versions when relevant.
-      placeholder: 1.88.0
+      placeholder: 1.91.0
     validations:
       required: true
   - type: input
     id: client
     attributes:
       label: MCP client
-      description: Name and version of the MCP client (for example OpenCode2).
-      placeholder: OpenCode2 beta-18743 (or another MCP client)
+      description: Name and version of the MCP client and the transport in use.
+      placeholder: Client name and version; stdio or Streamable HTTP
     validations:
       required: true
   - type: input

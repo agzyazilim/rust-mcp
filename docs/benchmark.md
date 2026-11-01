@@ -19,8 +19,10 @@ cargo run -p xtask -- task-benchmark-smoke
 ```
 
 `protocol-smoke` starts the real stdio binary and checks initialization, tool
-discovery, structured/text parity, `2026-07-28` task creation, progress,
-cancellation, terminal state, synchronous fallback, and fixture cleanup.
+discovery, structured/text parity, all embedded skills through the `workspace`
+tool, prompts and resources (including content checksums), `2026-07-28` task
+creation, progress, cancellation, terminal state, synchronous fallback, and
+fixture cleanup.
 
 `benchmark-smoke` runs frozen clean and broken Rust fixtures against an oracle.
 It verifies that status and `passed` fields agree and compares current behavior
@@ -56,6 +58,15 @@ use the complete platform and packaging gates for release evidence. A successful
 filtered test is evidence only for the selected tests, never for the full
 workspace or every feature combination.
 
+### Toolchain for local Cargo measurements
+
+The `compact_response.py`, `request_latency.py`, `scope_selection.py`, and
+`verify_scope.py` scripts require Python 3.11 or later and read their default
+Rust toolchain from `rust-toolchain.toml`. Pass `--toolchain <version>` to
+reproduce an earlier measurement. Reports record the selected toolchain and
+comparisons reject different toolchains; use the same selection for both arms.
+Recorded historical reports retain the versions used when they were measured.
+
 ## Offline Workspace and Catalogue Measurements
 
 On Linux, use an already-built binary to measure the real stdio `workspace`
@@ -83,22 +94,6 @@ a cold-filesystem measurement. Catalogue byte reductions are not token counts,
 and these fixture measurements do not establish general Rust project or model
 performance. The current harness is Linux-only; this does not narrow the
 server's supported platforms.
-
-## Optional Legacy Client Compatibility
-
-The OpenCode2 adapter retains a separate compatibility check:
-
-```bash
-npm install --global @opencode-ai/cli@0.0.0-beta-18743
-cargo run -p xtask -- opencode-smoke
-```
-
-It runs the pinned host against direct and grouped local MCP configurations.
-A loopback fake provider returns deterministic tool calls; no paid or external
-model endpoint is used. The CI workflow's manual `legacy_opencode` input enables
-this job. It is not required by the release workflow. Changes to that adapter
-should still run this check and report its result separately from core MCP
-compatibility.
 
 ## Predeclared Task Benchmark Gates
 
@@ -160,7 +155,7 @@ The minimum local release gate is:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --all-features --locked --no-fail-fast
-cargo +1.88.0 check --workspace --all-targets --all-features --locked
+cargo +1.91.0 check --workspace --all-targets --all-features --locked
 cargo build --release --locked
 cargo package -p agz-rust-mcp --locked
 cargo publish -p agz-rust-mcp --dry-run --locked

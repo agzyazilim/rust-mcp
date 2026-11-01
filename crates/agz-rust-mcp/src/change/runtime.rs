@@ -379,7 +379,7 @@ pub(crate) fn verify_and_digest(
                 }
                 hasher.update(&buffer[..read]);
             }
-            let digest = format!("{:x}", hasher.finalize());
+            let digest = hex::encode(hasher.finalize());
             if digest != *expected_hash {
                 return Err(SnapshotError::Incomparable(format!(
                     "snapshot file {relative} does not match the recorded revision hash"
@@ -416,7 +416,7 @@ pub(crate) fn verify_and_digest(
         hasher.update(bytes.to_string().as_bytes());
         hasher.update([0]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hex::encode(hasher.finalize()))
 }
 
 fn relative_display(path: &Path) -> String {

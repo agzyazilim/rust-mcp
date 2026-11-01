@@ -944,7 +944,7 @@ impl ProfileService {
             Err(reason) => return (unavailable(reason), None),
         };
         let relative_path = self.persist_report(id, text.as_bytes());
-        let digest = format!("{:x}", Sha256::digest(text.as_bytes()));
+        let digest = hex::encode(Sha256::digest(text.as_bytes()));
         let (extraction, units, reason) = match extract_timing_units(&text, MAX_TIMING_UNITS) {
             Ok(units) => (
                 "parsed".to_owned(),
@@ -1725,7 +1725,7 @@ fn evidence_id(evidence: &GateEvidence) -> String {
             .as_nanos()
             .to_le_bytes(),
     );
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = hex::encode(hasher.finalize());
     format!("pe-{}", &digest[..16])
 }
 
@@ -2044,11 +2044,11 @@ fn cargo_phase_ms(record: &ProfileRecord) -> Option<u64> {
     let mut found = false;
     let mut total = 0_u64;
     for phase in &record.phases {
-        if phase.name.starts_with("cargo:") {
-            if let Some(ms) = phase.ms {
-                found = true;
-                total = total.saturating_add(ms);
-            }
+        if phase.name.starts_with("cargo:")
+            && let Some(ms) = phase.ms
+        {
+            found = true;
+            total = total.saturating_add(ms);
         }
     }
     found.then_some(total)

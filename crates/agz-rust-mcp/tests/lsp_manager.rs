@@ -185,15 +185,14 @@ impl MockClient {
     }
 
     fn crash(&self) {
-        if !self.closed.swap(true, Ordering::AcqRel) {
-            if let Some(handler) = self
+        if !self.closed.swap(true, Ordering::AcqRel)
+            && let Some(handler) = self
                 .close_handler
                 .lock()
                 .expect("close handler mutex")
                 .clone()
-            {
-                handler();
-            }
+        {
+            handler();
         }
     }
 
@@ -277,10 +276,8 @@ impl LspClientLike for MockClient {
             .clone();
         let was_closed = self.closed.swap(true, Ordering::AcqRel);
         Box::pin(async move {
-            if !was_closed {
-                if let Some(handler) = close_handler {
-                    handler();
-                }
+            if !was_closed && let Some(handler) = close_handler {
+                handler();
             }
             Ok(())
         })

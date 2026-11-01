@@ -8,12 +8,12 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use agz_rust_mcp::{Config, RustMcpServer, lsp::path_to_file_uri};
+use agz_rust_mcp::{AppState, Config, RustMcpServer, lsp::path_to_file_uri};
 use anyhow::{Context, Result};
 use rmcp::{
     ClientHandler, ClientLifecycleMode, ClientServiceExt, ErrorData as McpError, ServiceExt,
     model::{
-        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientInfo, Implementation,
+        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientConfig, Implementation,
         ProtocolVersion,
     },
     service::{MaybeSendFuture, Peer, RequestContext, RoleClient},
@@ -31,7 +31,7 @@ impl Drop for IsolatedState {
 
 #[derive(Clone)]
 struct MockClient {
-    info: ClientInfo,
+    info: ClientConfig,
     roots: Arc<Mutex<MockRoots>>,
 }
 
@@ -43,7 +43,7 @@ struct MockRoots {
 }
 
 impl MockClient {
-    fn new(info: ClientInfo, paths: Vec<PathBuf>) -> Self {
+    fn new(info: ClientConfig, paths: Vec<PathBuf>) -> Self {
         Self {
             info,
             roots: Arc::new(Mutex::new(MockRoots {
@@ -106,7 +106,7 @@ impl ClientHandler for MockClient {
         }
     }
 
-    fn get_info(&self) -> ClientInfo {
+    fn get_info(&self) -> ClientConfig {
         self.info.clone()
     }
 }
@@ -138,20 +138,21 @@ fn isolated_config(root: PathBuf) -> (Config, IsolatedState) {
     config.gate.cache_dir = state.join("gate");
     config.gate.lease_dir = state.join("leases");
     config.docs.cache_dir = state.join("docs");
+    config.change.scratch_dir = state.join("change");
     config.telemetry.enabled = false;
     config.telemetry.path = state.join("activity.jsonl");
     (config, IsolatedState(state))
 }
 
-fn client_info(capabilities: ClientCapabilities) -> ClientInfo {
-    ClientInfo::new(
+fn client_info(capabilities: ClientCapabilities) -> ClientConfig {
+    ClientConfig::new(
         capabilities,
         Implementation::new("agz-rust-mcp-roots-test", "0.1.0"),
     )
 }
 
 #[allow(deprecated)]
-fn advertised_client_info() -> ClientInfo {
+fn advertised_client_info() -> ClientConfig {
     client_info(
         ClientCapabilities::builder()
             .enable_roots()
@@ -362,6 +363,165 @@ async fn advertised_roots_narrow_the_configured_allowlist_and_singleflight() -> 
 
     client.cancel().await?;
     server.await??;
+    Ok(())
+}
+
+#[tokio::test]
+async fn clients_sharing_domain_state_keep_independent_root_authority_and_epochs() -> Result<()> {
+    async fn context_result(
+        peer: &Peer<RoleClient>,
+        arguments: serde_json::Value,
+    ) -> Result<serde_json::Value> {
+        let response = peer
+            .call_tool_once(
+                CallToolRequestParams::new("context")
+                    .with_arguments(arguments.as_object().unwrap().clone()),
+            )
+            .await?;
+        let CallToolResponse::Complete(result) = response else {
+            anyhow::bail!("context must return a complete response");
+        };
+        result
+            .structured_content
+            .context("context structured output")
+    }
+
+    let (mut config, isolated) = isolated_config(fixture_root());
+    let project = isolated.0.join("project");
+    let left = project.join("left");
+    let right = project.join("right");
+    fs::create_dir_all(&left)?;
+    fs::create_dir_all(&right)?;
+    fs::write(left.join("lib.rs"), "pub const NAME: &str = \"left\";\n")?;
+    fs::write(right.join("lib.rs"), "pub const NAME: &str = \"right\";\n")?;
+    config.server.allow_roots = vec![project.clone()];
+    config.server.transport = agz_rust_mcp::config::Transport::Http;
+    config.rust_analyzer.path = Some(isolated.0.join("missing-rust-analyzer"));
+    let state = Arc::new(AppState::new(config)?);
+    let mut handles = Vec::new();
+    let mut clients = Vec::new();
+    let mut mocks = Vec::new();
+    for path in [&left, &right] {
+        let (server_io, client_io) = tokio::io::duplex(1 << 20);
+        let handler = RustMcpServer::from_state(Arc::clone(&state));
+        handles.push(tokio::spawn(async move {
+            let service = Box::pin(handler.serve(server_io)).await?;
+            service.waiting().await?;
+            anyhow::Ok(())
+        }));
+        let mock = MockClient::new(advertised_client_info(), vec![path.clone()]);
+        clients.push(mock.clone().serve(client_io).await?);
+        mocks.push(mock);
+    }
+
+    let prepared = context_result(
+        clients[0].peer(),
+        serde_json::json!({
+            "action":"prepare", "purpose":"inspect one client", "byteBudget":4096,
+            "anchors":[{"kind":"file", "file":"lib.rs"}]
+        }),
+    )
+    .await?;
+    assert_eq!(prepared["status"], "OK");
+    let capsule_id = prepared["data"]["capsuleId"]
+        .as_str()
+        .context("left capsule")?;
+    let original_epoch = prepared["data"]["rootEpoch"].clone();
+
+    // Prime one cache before asking the other client. A shared coordinator would
+    // incorrectly reuse the first client's roots for the second connection.
+    for (client, expected) in clients.iter().zip([&left, &right]) {
+        let result = call_audit(client.peer()).await?;
+        assert_eq!(result_status(&result), Some("CLEAN"));
+        let output = result
+            .structured_content
+            .context("audit structured output")?;
+        let root = output["workspace"]["workspaceRoot"]
+            .as_str()
+            .context("audit workspace root")?;
+        assert_eq!(Path::new(root).canonicalize()?, expected.canonicalize()?);
+    }
+    assert_eq!((mocks[0].calls(), mocks[1].calls()), (1, 1));
+    let refused = context_result(
+        clients[1].peer(),
+        serde_json::json!({
+            "action":"expand", "capsuleId":capsule_id, "byteBudget":4096
+        }),
+    )
+    .await?;
+    assert_eq!(
+        refused["status"], "EXPIRED",
+        "another authority cannot read this capsule"
+    );
+    let expanded = context_result(
+        clients[0].peer(),
+        serde_json::json!({
+            "action":"expand", "capsuleId":capsule_id, "byteBudget":4096
+        }),
+    )
+    .await?;
+    assert_eq!(
+        expanded["status"], "OK",
+        "another client's authority must not expire this capsule: {expanded:#}"
+    );
+    assert_eq!(expanded["data"]["rootEpoch"], original_epoch);
+
+    // Each client rejects an explicit path outside its own narrowed root, even
+    // though that path is configured for the shared server process.
+    for (client, outside) in clients.iter().zip([&right, &left]) {
+        assert!(
+            client
+                .peer()
+                .call_tool_once(
+                    CallToolRequestParams::new("workspace").with_arguments(
+                        serde_json::json!({"action":"inspect","dir":outside})
+                            .as_object()
+                            .unwrap()
+                            .clone()
+                    )
+                )
+                .await
+                .is_err()
+        );
+    }
+
+    mocks[0].set_roots(vec![project.clone()]);
+    clients[0].peer().notify_roots_list_changed().await?;
+    let expanded = call_audit(clients[0].peer()).await?;
+    let output = expanded
+        .structured_content
+        .context("audit structured output")?;
+    let root = output["workspace"]["workspaceRoot"]
+        .as_str()
+        .context("audit workspace root")?;
+    assert_eq!(Path::new(root).canonicalize()?, project.canonicalize()?);
+    let expired = context_result(
+        clients[0].peer(),
+        serde_json::json!({
+            "action":"expand", "capsuleId":capsule_id, "byteBudget":4096
+        }),
+    )
+    .await?;
+    assert_eq!(
+        expired["status"], "EXPIRED",
+        "this client's root change must invalidate its old capsule"
+    );
+    let unchanged = call_audit(clients[1].peer()).await?;
+    let output = unchanged
+        .structured_content
+        .context("audit structured output")?;
+    let root = output["workspace"]["workspaceRoot"]
+        .as_str()
+        .context("audit workspace root")?;
+    assert_eq!(Path::new(root).canonicalize()?, right.canonicalize()?);
+    assert_eq!((mocks[0].calls(), mocks[1].calls()), (2, 1));
+    for client in clients {
+        client.cancel().await?;
+    }
+    for handle in handles {
+        handle.await??;
+    }
+    state.shutdown_async().await?;
     Ok(())
 }
 

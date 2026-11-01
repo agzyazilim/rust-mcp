@@ -5,13 +5,14 @@
 the [tool and configuration reference](tools.md). Continue with the
 [validation and benchmark protocol](benchmark.md).
 
-`agz-rust-mcp` is one Rust process with an RMCP stdio adapter, bounded domain
-services, and supervised external processes. It never accepts remote transport
-connections and never writes workspace source.
+`agz-rust-mcp` is one Rust process with standard MCP stdio and Streamable HTTP
+adapters, bounded domain services, and supervised external processes. HTTP binds
+only to a loopback address. The server never writes workspace source.
 
 ## Data Flow
 
-1. `main` loads strict configuration and starts RMCP on stdin/stdout.
+1. `main` loads strict configuration and starts RMCP on stdin/stdout by default,
+   or serves Streamable HTTP at `/mcp` when `server.transport="http"`.
 2. The server negotiates protocol `2025-11-25` by default and can discover
    `2026-07-28` support.
 3. Client roots narrow the configured root set; every workspace and dependency
@@ -30,6 +31,8 @@ connections and never writes workspace source.
 | Component | Responsibility |
 | --- | --- |
 | `server` | MCP tools, resources, prompts, tasks, progress, response parity. |
+| `transport` | Loopback Streamable HTTP, Host/Origin validation, service and body limits. |
+| `skills` | Versioned offline workflows embedded in the executable; tools, prompts, resources and optional export. |
 | `workspace` | Root authorization, package selection, metadata, input identity. |
 | `gate` | Cargo targets, preflight, singleflight, cache, host leases. |
 | `process` | Bounded output, deadlines, process groups/Job Objects, recovery journal. |
@@ -48,6 +51,19 @@ receives the same domain operation synchronously.
 Root changes increment an epoch. Work tied to an older root generation is
 cancelled, and root-sensitive cache authority is invalidated. Client roots are
 not authentication and cannot authorize a path absent from configured roots.
+
+HTTP keeps domain state for the process lifetime so modern stateless requests can
+continue a task or expand an existing context capsule. Each legacy session or
+modern request has a separate client-root coordinator. A bounded authority cache
+keeps unrelated root sets from invalidating each other's evidence; a client's
+root-change notification still revokes its previous authority generation.
+
+Each process serves one trusted user's domain. Task IDs and tool state are shared
+within that domain; an HTTP session is not a separate user account. Use a separate
+server process for each security principal. Remote access requires an authenticated
+HTTPS proxy in front of the loopback listener. Browser Origin headers are rejected,
+and the proxy must preserve an accepted local Host authority. The standard MCP
+SDK handles legacy session IDs and modern per-request protocol metadata.
 
 ## Authority Model
 

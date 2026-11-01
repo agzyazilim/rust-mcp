@@ -8,6 +8,53 @@ Changelog structure.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-31
+
+### Added
+
+- Native Streamable HTTP at `/mcp`, alongside default stdio: legacy MCP sessions
+  and modern stateless requests use the same tools, prompts and resources.
+- Loopback-only HTTP listeners, exact Host checks, enforced Origin rejection,
+  bounded request bodies and concurrent sessions, and graceful process cleanup.
+- Tools-only access to all four embedded workflows through `workspace(action="skills")`,
+  with version, SHA-256 identity, complete content and bounded pagination. Skill
+  discovery does not require Cargo, a project manifest or client roots.
+- HTTP protocol, input-boundary and cross-client root-authority regression tests.
+
+### Changed
+
+- Rust MSRV and release toolchain are now 1.91.0. Resolver 3 selects dependencies
+  with their supported Rust versions; `cargo-platform` 0.3.3 is transitive only.
+- Updated RMCP to 3.8.0, SHA2 to 0.11.1, proptest to 1.12.0, command-fds to
+  0.3.3, process-wrap to 10.0.1, reqwest to 0.13.5 and other compatible packages.
+- Updated checksum-pinned nextest, sccache and MCP publisher tools. Dependency
+  advisory, source and license policy remains unchanged.
+- Skills, installation and tool documentation describe standard MCP contracts;
+  client-specific tool prefixes and configuration layouts are no longer required.
+- Generic subprocess protocol smoke verifies equivalent skill content across
+  tools, resources and prompts, including matching hashes and text fallbacks.
+
+### Fixed
+
+- Keep HTTP clients' root authorities independently valid in a bounded cache;
+  roots-change notifications revoke the affected authority and cancel its work.
+- Reject changeset and work handles used from another selected workspace without
+  exposing or mutating the original record. A failed cross-scope capsule lookup
+  no longer invalidates its owner's capsule.
+- Close idle legacy HTTP sessions and stalled request bodies during shutdown,
+  releasing application state without waiting for the SDK idle timeout.
+
+### Removed
+
+- OpenCode/OpenCode2 smoke adapter, fixtures, command, CI job and release coupling.
+- Unused Iced-specific knowledge module and hidden legacy resource URI.
+- Duplicate xtask source inclusion, redundant test execution, stale workspace
+  lockfile, unused benchmark helpers and unreferenced fixtures.
+- Unused borrow-hint tables, workflow generators and knowledge aliases; the
+  public borrow-error resource and embedded repair guidance remain available.
+- Documentation tests tied to client display prefixes. Remaining contract tests
+  compare documentation with actual tool definitions and configuration defaults.
+
 ## [0.5.0] - 2026-10-31
 
 ### Added
@@ -210,7 +257,8 @@ Changelog structure.
 - Cargo distribution through crates.io and discovery metadata for the official
   MCP Registry.
 
-[Unreleased]: https://github.com/agzyazilim/rust-mcp/compare/agz-rust-mcp-v0.5.0...HEAD
+[Unreleased]: https://github.com/agzyazilim/rust-mcp/compare/agz-rust-mcp-v0.6.0...HEAD
+[0.6.0]: https://github.com/agzyazilim/rust-mcp/compare/agz-rust-mcp-v0.5.0...agz-rust-mcp-v0.6.0
 [0.5.0]: https://github.com/agzyazilim/rust-mcp/compare/agz-rust-mcp-v0.4.0...agz-rust-mcp-v0.5.0
 [0.4.0]: https://github.com/ugur-murat-alt/agz-rust-mcp/compare/agz-rust-mcp-v0.3.0...agz-rust-mcp-v0.4.0
 [0.3.0]: https://github.com/ugur-murat-alt/agz-rust-mcp/compare/agz-rust-coder-v0.2.0...agz-rust-mcp-v0.3.0

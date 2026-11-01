@@ -13,7 +13,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
-use crate::workspace::{AuthorizedRoot, RootError, WorkspaceRoot};
+use crate::{
+    skills::{BUNDLED_SKILLS, SkillInfo},
+    workspace::{AuthorizedRoot, RootError, WorkspaceRoot},
+};
 
 const MAX_ENTRIES: usize = 30_000;
 const MAX_FILES: usize = 4_000;
@@ -42,6 +45,8 @@ pub enum WorkspaceAction {
     Inspect,
     Search,
     Read,
+    /// List built-in workflow skills or read one with the optional `skill` name.
+    Skills,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -50,6 +55,9 @@ pub struct WorkspaceRequest {
     #[serde(default)]
     pub dir: Option<String>,
     pub action: WorkspaceAction,
+    /// Built-in skill name or short prompt alias; only accepted for `skills`.
+    #[serde(default)]
+    pub skill: Option<String>,
     #[serde(default)]
     pub path: Option<String>,
     #[serde(default)]
@@ -87,6 +95,8 @@ pub struct WorkspaceData {
     pub manifests: Vec<ManifestInfo>,
     pub matches: Vec<SourceMatch>,
     pub file: Option<SourceFile>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<SkillInfo>,
     pub scan: ScanReport,
     pub page: WorkspacePage,
     pub notices: Vec<String>,
@@ -243,6 +253,9 @@ pub enum WorkspaceError {
 
 pub fn validate_workspace_request(request: &WorkspaceRequest) -> Result<(), WorkspaceError> {
     let invalid = |message: &str| WorkspaceError::InvalidInput(message.to_owned());
+    if request.action != WorkspaceAction::Skills && request.skill.is_some() {
+        return Err(invalid("skill is only accepted for skills"));
+    }
     if let Some(dir) = &request.dir
         && (dir.trim().is_empty() || dir.contains('\0'))
     {
@@ -300,6 +313,36 @@ pub fn validate_workspace_request(request: &WorkspaceRequest) -> Result<(), Work
                 return Err(invalid("inspect does not accept query/line/lineCount"));
             }
         }
+        WorkspaceAction::Skills => {
+            if request.dir.is_some() || request.path.is_some() || request.query.is_some() {
+                return Err(invalid(
+                    "skills are built into the server; dir/path/query are not accepted",
+                ));
+            }
+            if let Some(name) = &request.skill {
+                if crate::skills::find(name).is_none() {
+                    return Err(invalid(
+                        "unknown skill; list skills without a skill name first",
+                    ));
+                }
+                if request.cursor.is_some() || request.limit.is_some() {
+                    return Err(invalid(
+                        "reading a skill uses line/lineCount, not cursor/limit",
+                    ));
+                }
+                if request.line == Some(0)
+                    || request
+                        .line_count
+                        .is_some_and(|count| !(1..=500).contains(&count))
+                {
+                    return Err(invalid(
+                        "line is one-based; lineCount must be between 1 and 500",
+                    ));
+                }
+            } else if request.line.is_some() || request.line_count.is_some() {
+                return Err(invalid("line/lineCount require a selected skill"));
+            }
+        }
     }
     Ok(())
 }
@@ -312,41 +355,11 @@ pub fn execute_workspace(
     cancellation: &CancellationToken,
     output_limit: u64,
 ) -> Result<WorkspaceData, WorkspaceError> {
-    validate_workspace_request(request)?;
-    if output_limit < MIN_BUDGET {
-        return Err(WorkspaceError::InvalidInput(
-            "tool output limit is below 2048 bytes".into(),
-        ));
+    if request.action == WorkspaceAction::Skills {
+        return execute_skills(request, output_limit);
     }
-    let budget = request.byte_budget.unwrap_or(16_384).min(output_limit);
-    let mut data = WorkspaceData {
-        action: request.action,
-        status: WorkspaceStatus::Ok,
-        scope: request.path.clone().unwrap_or_else(|| ".".into()),
-        authority: match request.action {
-            WorkspaceAction::Inspect => "manifest_and_lockfile_declarations",
-            WorkspaceAction::Search => "literal_source_matches_not_semantic_references",
-            WorkspaceAction::Read => "workspace_source",
-        }
-        .into(),
-        manifests: Vec::new(),
-        matches: Vec::new(),
-        file: None,
-        scan: ScanReport {
-            complete: true,
-            ..ScanReport::default()
-        },
-        page: WorkspacePage {
-            cursor: request.cursor.unwrap_or(0),
-            limit: request.limit.unwrap_or(32),
-            returned: 0,
-            next_cursor: None,
-            next_line: None,
-        },
-        notices: Vec::new(),
-        truncated: false,
-        byte_budget: budget,
-    };
+    validate_workspace_request(request)?;
+    let mut data = empty_result(request, output_limit)?;
     if cancellation.is_cancelled() {
         data.status = WorkspaceStatus::Cancelled;
         data.scan.complete = false;
@@ -371,6 +384,139 @@ pub fn execute_workspace(
         data.status = WorkspaceStatus::Partial;
     }
     enforce_budget(&mut data);
+    Ok(data)
+}
+
+fn empty_result(
+    request: &WorkspaceRequest,
+    output_limit: u64,
+) -> Result<WorkspaceData, WorkspaceError> {
+    if output_limit < MIN_BUDGET {
+        return Err(WorkspaceError::InvalidInput(
+            "tool output limit is below 2048 bytes".into(),
+        ));
+    }
+    let budget = request.byte_budget.unwrap_or(16_384).min(output_limit);
+    Ok(WorkspaceData {
+        action: request.action,
+        status: WorkspaceStatus::Ok,
+        scope: request.path.clone().unwrap_or_else(|| ".".into()),
+        authority: match request.action {
+            WorkspaceAction::Inspect => "manifest_and_lockfile_declarations",
+            WorkspaceAction::Search => "literal_source_matches_not_semantic_references",
+            WorkspaceAction::Read => "workspace_source",
+            WorkspaceAction::Skills => "bundled_skill_guidance",
+        }
+        .into(),
+        manifests: Vec::new(),
+        matches: Vec::new(),
+        file: None,
+        skills: Vec::new(),
+        scan: ScanReport {
+            complete: true,
+            ..ScanReport::default()
+        },
+        page: WorkspacePage {
+            cursor: request.cursor.unwrap_or(0),
+            limit: request.limit.unwrap_or(32),
+            returned: 0,
+            next_cursor: None,
+            next_line: None,
+        },
+        notices: Vec::new(),
+        truncated: false,
+        byte_budget: budget,
+    })
+}
+
+/// Built-in guidance is independent of workspace access, Cargo and client roots.
+pub fn execute_skills(
+    request: &WorkspaceRequest,
+    output_limit: u64,
+) -> Result<WorkspaceData, WorkspaceError> {
+    validate_workspace_request(request)?;
+    if request.action != WorkspaceAction::Skills {
+        return Err(WorkspaceError::InvalidInput(
+            "expected skills action".into(),
+        ));
+    }
+    let mut data = empty_result(request, output_limit)?;
+    data.scope = "bundled_skills".into();
+    if let Some(name) = request.skill.as_deref() {
+        let skill = crate::skills::find(name)
+            .ok_or_else(|| WorkspaceError::InvalidInput("unknown skill".into()))?;
+        let lines: Vec<_> = skill.markdown.split_inclusive('\n').collect();
+        let start = request.line.unwrap_or(1) as usize - 1;
+        let mut selected: Vec<_> = lines
+            .iter()
+            .skip(start)
+            .take(request.line_count.unwrap_or(500) as usize)
+            .copied()
+            .collect();
+        let mut info = skill.info();
+        info.start_line = Some(request.line.unwrap_or(1));
+        info.total_lines = Some(lines.len() as u32);
+        info.markdown = Some(selected.concat());
+        data.skills.push(info);
+        loop {
+            data.page.limit = request.line_count.unwrap_or(500);
+            data.page.returned = selected.len() as u32;
+            data.page.next_line = (start.saturating_add(selected.len()) < lines.len())
+                .then_some((start + selected.len() + 1) as u32);
+            data.truncated = data.page.next_line.is_some();
+            data.status = if selected.is_empty() && start >= lines.len() {
+                WorkspaceStatus::NotFound
+            } else if data.truncated {
+                WorkspaceStatus::Partial
+            } else {
+                WorkspaceStatus::Ok
+            };
+            if fits_wire_budget(&data) {
+                if selected.is_empty() && start < lines.len() {
+                    return Err(WorkspaceError::InvalidInput(
+                        "one skill line exceeds byteBudget; increase the budget".into(),
+                    ));
+                }
+                break;
+            }
+            if selected.pop().is_none() {
+                return Err(WorkspaceError::InvalidInput(
+                    "skill metadata exceeds byteBudget".into(),
+                ));
+            }
+            data.skills[0].markdown = Some(selected.concat());
+        }
+    } else {
+        let start = request.cursor.unwrap_or(0) as usize;
+        data.skills = BUNDLED_SKILLS
+            .iter()
+            .skip(start)
+            .take(request.limit.unwrap_or(32) as usize)
+            .map(|skill| skill.info())
+            .collect();
+        loop {
+            data.page.returned = data.skills.len() as u32;
+            data.page.next_cursor = (start + data.skills.len() < BUNDLED_SKILLS.len())
+                .then_some((start + data.skills.len()) as u32);
+            data.truncated = data.page.next_cursor.is_some();
+            if data.truncated {
+                data.status = WorkspaceStatus::Partial;
+            }
+            if fits_wire_budget(&data) {
+                if data.skills.is_empty() && start < BUNDLED_SKILLS.len() {
+                    return Err(WorkspaceError::InvalidInput(
+                        "one skill entry exceeds byteBudget; increase the budget".into(),
+                    ));
+                }
+                break;
+            }
+            if data.skills.pop().is_none() {
+                return Err(WorkspaceError::InvalidInput(
+                    "skill catalog exceeds byteBudget".into(),
+                ));
+            }
+        }
+    }
     Ok(data)
 }
 
@@ -416,7 +562,7 @@ fn display(path: &Path) -> String {
 }
 
 fn sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 fn partial(data: &mut WorkspaceData, notice: &str) {

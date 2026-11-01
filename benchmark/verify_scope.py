@@ -14,6 +14,7 @@ import tempfile
 import time
 
 from mcp_stdio import McpSession
+from toolchain import selected_toolchain
 
 
 def digest(path):
@@ -39,11 +40,11 @@ def fixture_at(root):
     return {name: digest(root / name) for name in sorted(files)}
 
 
-def repetition(binary, cargo, root):
+def repetition(binary, cargo, root, toolchain):
     env = {k: v for k, v in os.environ.items() if not k.startswith("AGZ_RUST_MCP_")}
     env.pop("CARGO_TARGET_DIR", None)
-    env.update(RUSTUP_TOOLCHAIN="1.88.0", CARGO_NET_OFFLINE="true", CARGO_INCREMENTAL="0",
-               RUSTC_WRAPPER="", RUST_BALANCED_SCCACHE="off")
+    env.update(RUSTUP_TOOLCHAIN=toolchain, CARGO_NET_OFFLINE="true", CARGO_INCREMENTAL="0",
+               RUSTC_WRAPPER="", RUSTC_WORKSPACE_WRAPPER="")
     with tempfile.TemporaryDirectory(prefix="agz-verify-scope-state-") as directory:
         state = Path(directory)
         command = [str(binary), "--allow-root", str(root), "--cargo-path", str(cargo),
@@ -100,14 +101,16 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--baseline-report", type=Path)
+    parser.add_argument("--toolchain", help="Rust toolchain (default: repository rust-toolchain.toml)")
     args = parser.parse_args()
+    toolchain = selected_toolchain(args.toolchain)
     root = args.fixture.resolve()
     hashes = fixture_at(root)
-    rows = [row for _ in range(3) for row in repetition(args.binary.resolve(), args.cargo.resolve(), root)]
+    rows = [row for _ in range(3) for row in repetition(args.binary.resolve(), args.cargo.resolve(), root, toolchain)]
     assert fixture_at(root) == hashes
     summary = {cache: {"medianWallMs": statistics.median(r["wallMs"] for r in rows if r["cache"] == cache),
                        "medianExecutedCases": statistics.median(r["executedCases"] for r in rows if r["cache"] == cache)} for cache in ("cold", "warm")}
-    report = {"binarySha256": digest(args.binary), "fixtureSha256": hashes, "rust": "1.88.0",
+    report = {"binarySha256": digest(args.binary), "fixtureSha256": hashes, "rust": toolchain,
               "sccache": False, "incremental": False, "samples": rows, "summary": summary}
     if args.baseline_report:
         report["comparison"] = compare_reports(json.loads(args.baseline_report.read_text()), report)

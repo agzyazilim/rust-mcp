@@ -1,14 +1,20 @@
 #![forbid(unsafe_code)]
 
-use std::{error::Error, time::Duration};
+use std::{error::Error, future::Future, sync::Arc, time::Duration};
 
-use agz_rust_mcp::{CliOptions, Config, RustMcpServer, config::CliCommand};
+use agz_rust_mcp::{
+    AppState, CliOptions, Config, RustMcpServer,
+    config::{CliCommand, Transport},
+};
 use clap::{Parser, error::ErrorKind};
 use rmcp::{ServiceExt, transport::stdio};
+use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
+type MainError = Box<dyn Error + Send + Sync>;
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn main() -> Result<(), MainError> {
     match agz_rust_mcp::process::root_bound::maybe_run_root_guard() {
         Ok(Some(())) => return Ok(()),
         Ok(None) => {}
@@ -40,32 +46,37 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         return Ok(());
     }
     let config = Config::load_cli(&cli)?;
+    let transport = config.server.transport;
+    let http_bind = config.server.http_bind;
     let server = RustMcpServer::new(config)?;
     let state = server.state().clone();
-    let service = Box::pin(server.serve(stdio())).await?;
-    let transport_cancellation = service.cancellation_token();
-    let waiting = service.waiting();
-    tokio::pin!(waiting);
 
-    let transport_result: Result<(), Box<dyn Error + Send + Sync>> = tokio::select! {
-        result = &mut waiting => {
-            result.map(|_| ()).map_err(Into::into)
+    let transport_result = match transport {
+        Transport::Stdio => {
+            let service = Box::pin(server.serve(stdio())).await?;
+            let cancellation = service.cancellation_token();
+            wait_for_shutdown(
+                async move { service.waiting().await.map(|_| ()).map_err(Into::into) },
+                &state,
+                move || cancellation.cancel(),
+            )
+            .await
         }
-        signal = shutdown_signal() => {
-            match signal {
-                Ok(()) => {
-                    state.begin_shutdown();
-                    transport_cancellation.cancel();
-                    match tokio::time::timeout(Duration::from_secs(5), &mut waiting).await {
-                        Ok(result) => result.map(|_| ()).map_err(Into::into),
-                        Err(_) => Err(std::io::Error::new(
-                            std::io::ErrorKind::TimedOut,
-                            "MCP transport did not stop within the shutdown deadline",
-                        ).into()),
-                    }
-                }
-                Err(error) => Err(error.into()),
-            }
+        Transport::Http => {
+            let cancellation = CancellationToken::new();
+            let http_cancellation = cancellation.clone();
+            let http_state = Arc::clone(&state);
+            wait_for_shutdown(
+                async move {
+                    let listener = tokio::net::TcpListener::bind(http_bind).await?;
+                    agz_rust_mcp::transport::serve_http(listener, http_state, http_cancellation)
+                        .await?;
+                    Ok(())
+                },
+                &state,
+                move || cancellation.cancel(),
+            )
+            .await
         }
     };
 
@@ -80,6 +91,28 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     transport_result?;
     shutdown_result?;
     Ok(())
+}
+
+async fn wait_for_shutdown(
+    waiting: impl Future<Output = Result<(), MainError>>,
+    state: &AppState,
+    cancel_transport: impl FnOnce(),
+) -> Result<(), MainError> {
+    tokio::pin!(waiting);
+
+    tokio::select! {
+        result = &mut waiting => result,
+        signal = shutdown_signal() => {
+            state.begin_shutdown();
+            cancel_transport();
+            let stopped = tokio::time::timeout(Duration::from_secs(5), &mut waiting).await;
+            signal?;
+            stopped.unwrap_or_else(|_| Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "MCP transport did not stop within the shutdown deadline",
+            ).into()))
+        }
+    }
 }
 
 #[cfg(unix)]

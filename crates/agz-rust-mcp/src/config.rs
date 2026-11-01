@@ -9,6 +9,7 @@ use std::{
     env,
     ffi::{OsStr, OsString},
     fs,
+    net::{Ipv4Addr, SocketAddr},
     path::{Component, Path, PathBuf},
 };
 
@@ -61,9 +62,30 @@ pub struct Config {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ServerConfig {
+    pub transport: Transport,
+    pub http_bind: SocketAddr,
     pub toolset: Toolset,
     pub allow_roots: Vec<PathBuf>,
     pub allow_dependency_roots: Vec<PathBuf>,
+}
+
+/// Standard MCP transports; stdio remains the default for local subprocesses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, clap::ValueEnum)]
+#[serde(rename_all = "lowercase")]
+pub enum Transport {
+    #[default]
+    Stdio,
+    Http,
+}
+
+impl Transport {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "stdio" => Ok(Self::Stdio),
+            "http" => Ok(Self::Http),
+            _ => Err("expected stdio or http".to_owned()),
+        }
+    }
 }
 
 /// Startup catalog selection. `core` exposes only the everyday Cargo workflow.
@@ -343,6 +365,8 @@ impl Config {
         let state_dir = namespace.join("state");
         Self {
             server: ServerConfig {
+                transport: Transport::Stdio,
+                http_bind: SocketAddr::from((Ipv4Addr::LOCALHOST, 8787)),
                 toolset: Toolset::Full,
                 allow_roots: vec![cwd],
                 allow_dependency_roots: Vec::new(),
@@ -548,6 +572,12 @@ impl Config {
     /// range, task limits are inconsistent, or server-owned paths overlap an
     /// authorized workspace or dependency root.
     pub fn validate(&self) -> Result<(), ConfigError> {
+        if !self.server.http_bind.ip().is_loopback() {
+            return Err(ConfigError::InvalidField {
+                field: "server.http_bind",
+                message: "HTTP must bind to a loopback address; use an authenticated HTTPS proxy for remote access".to_owned(),
+            });
+        }
         check_range(
             "gate.hard_timeout_ms",
             self.gate.hard_timeout_ms,
@@ -912,6 +942,12 @@ pub struct CliOptions {
     pub command: Option<CliCommand>,
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
+    /// MCP transport: stdio subprocess or local Streamable HTTP.
+    #[arg(long, value_enum)]
+    pub transport: Option<Transport>,
+    /// Loopback HTTP listen address (default: 127.0.0.1:8787).
+    #[arg(long)]
+    pub http_bind: Option<SocketAddr>,
     #[arg(long = "allow-root", action = ArgAction::Append, value_name = "PATH")]
     pub allow_root: Option<Vec<PathBuf>>,
     #[arg(long = "allow-dependency-root", action = ArgAction::Append, value_name = "PATH")]
@@ -1130,6 +1166,8 @@ struct FileConfig {
 #[derive(Debug, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
 struct FileServerConfig {
+    transport: Option<Transport>,
+    http_bind: Option<SocketAddr>,
     toolset: Option<Toolset>,
     allow_roots: Option<Vec<PathBuf>>,
     allow_dependency_roots: Option<Vec<PathBuf>>,
@@ -1350,6 +1388,8 @@ fn platform_cache_dir() -> PathBuf {
 #[allow(clippy::too_many_lines)]
 fn apply_file(config: &mut Config, file: FileConfig) {
     if let Some(server) = file.server {
+        apply_opt(&mut config.server.transport, server.transport);
+        apply_opt(&mut config.server.http_bind, server.http_bind);
         apply_opt(&mut config.server.toolset, server.toolset);
         if let Some(value) = server.allow_roots {
             config.server.allow_roots = value;
@@ -1378,10 +1418,10 @@ fn apply_file(config: &mut Config, file: FileConfig) {
         apply_opt(&mut config.tools.repair, tools.repair);
         apply_opt(&mut config.tools.work, tools.work);
     }
-    if let Some(cargo) = file.cargo {
-        if let Some(path) = cargo.path {
-            config.cargo.path = Some(path);
-        }
+    if let Some(cargo) = file.cargo
+        && let Some(path) = cargo.path
+    {
+        config.cargo.path = Some(path);
     }
     if let Some(gate) = file.gate {
         apply_opt(&mut config.gate.hard_timeout_ms, gate.hard_timeout_ms);
@@ -1554,6 +1594,14 @@ fn apply_environment(config: &mut Config, key: &str, value: &str) -> Result<(), 
         message,
     };
     match field {
+        "SERVER__TRANSPORT" => {
+            config.server.transport = Transport::parse(value).map_err(invalid)?
+        }
+        "SERVER__HTTP_BIND" => {
+            config.server.http_bind = value
+                .parse()
+                .map_err(|error: std::net::AddrParseError| invalid(error.to_string()))?;
+        }
         "SERVER__TOOLSET" => config.server.toolset = Toolset::parse(value).map_err(invalid)?,
         "SERVER__ALLOW_ROOTS" => {
             config.server.allow_roots = parse_path_list(value).map_err(invalid)?;
@@ -1779,6 +1827,8 @@ fn apply_environment(config: &mut Config, key: &str, value: &str) -> Result<(), 
 fn apply_cli(config: &mut Config, cli: &CliOptions) -> Result<(), ConfigError> {
     let invalid =
         |field: &'static str, message: String| ConfigError::InvalidField { field, message };
+    apply_opt(&mut config.server.transport, cli.transport);
+    apply_opt(&mut config.server.http_bind, cli.http_bind);
     if let Some(value) = &cli.allow_root {
         value.clone_into(&mut config.server.allow_roots);
     }

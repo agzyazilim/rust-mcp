@@ -299,10 +299,9 @@ fn api_items(text: &str) -> BTreeSet<String> {
                     .to_owned()
             })
             .or_else(|| keyword_name(rest))
+            && !name.is_empty()
         {
-            if !name.is_empty() {
-                items.insert(name);
-            }
+            items.insert(name);
         }
     }
     items

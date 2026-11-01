@@ -9,6 +9,9 @@ use anyhow::{Context, Result, bail};
 use fs4::FileExt;
 use serde_json::Value;
 
+///
+/// # Errors
+/// Returns an error if the compiled package directory has no repository parent.
 pub fn repo_root() -> Result<PathBuf> {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -16,6 +19,9 @@ pub fn repo_root() -> Result<PathBuf> {
         .context("xtask must live directly below the repository root")
 }
 
+///
+/// # Errors
+/// Returns an error for unsafe output paths, lock failures, serialization errors, or filesystem failures.
 pub fn publish(name: &str, run: &Value, results: &Value, report: &str) -> Result<PathBuf> {
     let root = repo_root()?
         .join("benchmark")

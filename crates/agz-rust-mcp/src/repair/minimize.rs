@@ -465,10 +465,10 @@ impl FailurePredicate {
         if diagnostic.code.as_deref() != Some(self.code.as_str()) {
             return false;
         }
-        if let Some(file) = &self.file {
-            if diagnostic.file.as_deref() != Some(file.as_str()) {
-                return false;
-            }
+        if let Some(file) = &self.file
+            && diagnostic.file.as_deref() != Some(file.as_str())
+        {
+            return false;
         }
         let normalized = normalize_message(&diagnostic.message);
         if !self.normalized_message.is_empty() && normalized != self.normalized_message {
@@ -1169,10 +1169,10 @@ fn relative_file(file: Option<&str>, root: &Path) -> Option<String> {
     let file = file?;
     let normalized = file.replace('\\', "/");
     let path = Path::new(&normalized);
-    if path.is_absolute() {
-        if let Ok(relative) = path.strip_prefix(root) {
-            return Some(relative.to_string_lossy().replace('\\', "/"));
-        }
+    if path.is_absolute()
+        && let Ok(relative) = path.strip_prefix(root)
+    {
+        return Some(relative.to_string_lossy().replace('\\', "/"));
     }
     Some(normalized)
 }
@@ -1625,10 +1625,10 @@ fn scan_identifiers(content: &str, counts: &mut BTreeMap<String, u32>) {
             while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                 i += 1;
             }
-            if i - start <= 128 {
-                if let Some(count) = counts.get_mut(&content[start..i]) {
-                    *count = count.saturating_add(1);
-                }
+            if i - start <= 128
+                && let Some(count) = counts.get_mut(&content[start..i])
+            {
+                *count = count.saturating_add(1);
             }
             continue;
         }
@@ -1774,10 +1774,10 @@ fn collect_include_references(content: &str, file: &str, referenced: &mut BTreeS
                 return;
             }
             found += 1;
-            if let Some(path) = paren_string(&content[at..]) {
-                if let Some(resolved) = resolve_relative(file, &path) {
-                    referenced.insert(resolved);
-                }
+            if let Some(path) = paren_string(&content[at..])
+                && let Some(resolved) = resolve_relative(file, &path)
+            {
+                referenced.insert(resolved);
             }
             search = at;
         }
@@ -2552,13 +2552,13 @@ fn tree_sha256(tree: &BTreeMap<String, String>) -> String {
         hasher.update(content.as_bytes());
         hasher.update(b"\0");
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn bounded(value: &str, max: usize) -> String {

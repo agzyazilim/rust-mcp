@@ -23,6 +23,9 @@ use agz_rust_mcp::{
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
+#[allow(dead_code)]
+mod support;
+
 struct Fixture {
     root: PathBuf,
     state: PathBuf,
@@ -85,8 +88,10 @@ impl Fixture {
         config.telemetry.path = state.join("activity.jsonl");
         mutate(&root, &mut config);
         let dependencies = config.server.allow_dependency_roots.clone();
-        let guard =
-            Arc::new(RootGuard::new([root.clone()], dependencies).expect("create root guard"));
+        let guard = Arc::new(
+            RootGuard::new(config.server.allow_roots.clone(), dependencies)
+                .expect("create root guard"),
+        );
         let service = Arc::new(
             ChangeService::new(
                 config.clone(),
@@ -149,11 +154,11 @@ impl Fixture {
     }
 
     fn candidate(&self, id: &str) -> PathBuf {
-        self.state.join("change").join(id).join("candidate")
+        self.config.change.scratch_dir.join(id).join("candidate")
     }
 
     fn change_dir(&self, id: &str) -> PathBuf {
-        self.state.join("change").join(id)
+        self.config.change.scratch_dir.join(id)
     }
 }
 
@@ -271,7 +276,7 @@ fn digest(path: &Path) -> String {
     let bytes = fs::read(path).expect("read digest target");
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn assert_unchanged(fixture: &Fixture, expected: &[(&str, String)]) {
@@ -1024,6 +1029,140 @@ async fn stage_and_export_after_epoch_change_are_rejected_without_mutation() {
         !stale_export.data.verified,
         "a stale epoch must never export verified=true"
     );
+}
+
+#[tokio::test]
+async fn another_authority_cannot_use_a_change_but_owner_can_clean_stale_state() {
+    let state = support::TestRoot::new("change-authority-state");
+    let fixture = Fixture::new(
+        "change-authority",
+        b"pub fn value() -> u8 { 1 }\n",
+        false,
+        |root, config| {
+            config.server.allow_roots = vec![root.parent().unwrap().to_owned()];
+            config.gate.cache_dir = state.path().join("cache");
+            config.gate.lease_dir = state.path().join("leases");
+            config.change.scratch_dir = state.path().join("change");
+            config.docs.cache_dir = state.path().join("docs");
+            config.telemetry.path = state.path().join("activity.jsonl");
+            config
+                .validate()
+                .expect("isolated authority fixture config");
+        },
+    );
+    let created = fixture.execute(create_request()).await;
+    assert_eq!(created.status, "CREATED", "{created:#?}");
+    let id = created.data.change_id.clone().expect("change id");
+    let base = created.data.base_identity.clone().expect("base identity");
+    let staged = fixture
+        .execute(stage_request(
+            &id,
+            0,
+            &base,
+            vec![patch("src/lib.rs", "u8 { 1 }", "u8 { 2 }")],
+            vec![],
+        ))
+        .await;
+    assert_eq!(staged.status, "STAGED", "{staged:#?}");
+    let candidate = fixture.candidate(&id).join("src/lib.rs");
+    let before = digest(&candidate);
+
+    // Creating from a nested source directory captures its whole Cargo
+    // workspace; the same directory and a sole-project parent remain usable.
+    for requested in [
+        fixture.root.join("src"),
+        fixture.root.parent().unwrap().to_owned(),
+    ] {
+        let selected = fixture
+            .guard
+            .snapshot(ClientRoots::unsupported())
+            .unwrap()
+            .select(Some(&requested))
+            .unwrap();
+        let inspected = fixture
+            .service
+            .execute(
+                inspect_request(&id),
+                &selected,
+                CancellationToken::new(),
+                None,
+            )
+            .await;
+        assert_eq!(inspected.status, "INSPECTED", "{inspected:#?}");
+    }
+
+    let other = fixture.root.parent().unwrap().join("other-project");
+    fs::create_dir_all(other.join("src")).unwrap();
+    fs::write(
+        other.join("Cargo.toml"),
+        "[package]\nname = \"other\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    fs::write(other.join("src/lib.rs"), "pub fn other() {}\n").unwrap();
+    let sibling_workspace = fixture
+        .guard
+        .snapshot(ClientRoots::unsupported())
+        .unwrap()
+        .select(Some(&other))
+        .unwrap();
+    assert_eq!(sibling_workspace.epoch(), fixture.workspace().epoch());
+    assert_eq!(
+        sibling_workspace.root().path(),
+        fixture.workspace().root().path()
+    );
+    let other_guard = RootGuard::new([other], std::iter::empty()).unwrap();
+    let other_workspace = other_guard
+        .snapshot(ClientRoots::unsupported())
+        .unwrap()
+        .select(None)
+        .unwrap();
+    for workspace in [&sibling_workspace, &other_workspace] {
+        for request in [
+            inspect_request(&id),
+            stage_request(
+                &id,
+                1,
+                &base,
+                vec![patch("src/lib.rs", "u8 { 2 }", "u8 { 3 }")],
+                vec![],
+            ),
+            validate_request(&id, 1, &base),
+            export_request(&id),
+            ChangeRequest {
+                action: ChangeAction::Migrate,
+                ..inspect_request(&id)
+            },
+            discard_request(&id),
+        ] {
+            let rejected = fixture
+                .service
+                .execute(request, workspace, CancellationToken::new(), None)
+                .await;
+            assert_eq!(rejected.status, "STALE", "{rejected:#?}");
+            assert!(rejected.is_error);
+            assert!(
+                rejected.data.patches.is_empty(),
+                "wrong-root errors must not leak source patches"
+            );
+            assert!(rejected.data.capture.is_none());
+            assert_eq!(
+                digest(&candidate),
+                before,
+                "wrong-root requests must not remove candidate state"
+            );
+        }
+    }
+    fixture.guard.invalidate_client_roots().unwrap();
+    let inspected = fixture.execute(inspect_request(&id)).await;
+    assert_eq!(inspected.status, "INSPECTED");
+    assert_eq!(inspected.data.revision, 1);
+    assert!(!inspected.data.verified);
+    let discarded = fixture.execute(discard_request(&id)).await;
+    assert_eq!(
+        discarded.status, "DISCARDED",
+        "an authorized owner can remove stale scratch"
+    );
+    assert!(!candidate.exists());
 }
 
 #[tokio::test]

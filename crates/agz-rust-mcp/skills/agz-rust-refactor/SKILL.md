@@ -5,7 +5,11 @@ description: Refactor or remove unnecessary Rust code with AGZ Rust MCP using se
 
 # Refactor and cleanup
 
-Use the connected AGZ Rust MCP with an absolute `dir` for the active checkout.
+Discover the connected AGZ Rust MCP's available tools once; client prefixes vary.
+Use an absolute `dir` for project operations in the active checkout. Advanced
+tools below require the full catalog; with core, use workspace search/read and
+compiler checks, apply the caller's focused patch, and run selected tests. Report
+the missing semantic evidence rather than calling unavailable tools.
 Identify the behavior to preserve and read the owning code and tests. Use
 `references`, `implementations` or a bounded `hierarchy` for the symbol involved.
 Check macro/cfg-generated and public consumers before inferring unused code;
@@ -22,6 +26,14 @@ Keep cleanup focused on the requested flow. Prefer removing repeated work or
 dead branches backed by source evidence over adding generalized abstractions.
 Use `audit` selectively for advisory findings; do not convert all findings into
 an unrelated cleanup campaign.
+
+Before deleting code, inspect callers, feature/platform branches, exports,
+packaging and CI entry points. Remove obsolete fixtures/scripts together with
+their consumers. Keep tests that exercise distinct behavior or failure modes;
+consolidate duplicates without dropping their assertions. Run the affected
+behavior and invalid-input tests after removal, plus compilation for affected
+features/platforms and the required project gates. A reduced test count alone
+does not establish cleanup quality.
 
 Stage complex candidates with `change`, or use `work` with the
 `refactor_and_verify` template and explicit scope/gates. The host still reviews

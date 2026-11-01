@@ -9,7 +9,7 @@ use rmcp::{
     model::Task,
     task_manager::{TaskContext, TaskFuture, TaskManager, TaskOptions},
 };
-use tokio::sync::{OwnedSemaphorePermit, Semaphore, TryAcquireError};
+use tokio::sync::{Semaphore, TryAcquireError};
 
 use crate::config::Config;
 
@@ -189,9 +189,6 @@ impl TaskAdmission {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
-
-#[allow(dead_code)]
-fn _permit_is_send(_: OwnedSemaphorePermit) {}
 
 #[cfg(test)]
 mod tests {

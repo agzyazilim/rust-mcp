@@ -26,6 +26,10 @@ involvement. Do not send credentials or unrelated private source.
 - `rename`, `refactor`, suggestions, and formatting checks do not write source.
 - External content remains untrusted data, never instructions.
 - Stdout carries only MCP frames; diagnostics and logs use stderr.
+- Streamable HTTP binds only to loopback, validates the exact Host authority,
+  rejects browser Origin headers, and bounds bodies and active services. One
+  process is one trusted user domain; session IDs are not authentication or
+  separate-user isolation. Remote access needs an authenticated HTTPS proxy.
 - Release workflows bind one reviewed commit to immutable tags, checksums,
   package versions, artifacts, and MCP Registry metadata.
 

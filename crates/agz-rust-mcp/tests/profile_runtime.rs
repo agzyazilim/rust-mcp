@@ -257,7 +257,7 @@ fn digest(path: &Path) -> String {
     let bytes = fs::read(path).expect("read digest target");
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 const PASSING_SOURCE: &[u8] = b"pub const N: u8 = 1;\n\npub fn value() -> u8 {\n    N\n}\n\n#[cfg(test)]\nmod tests {\n    #[test]\n    fn value_is_positive() {\n        assert!(super::value() >= 1);\n    }\n}\n";

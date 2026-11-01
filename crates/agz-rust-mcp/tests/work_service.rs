@@ -26,6 +26,9 @@ use agz_rust_mcp::{
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 
+#[allow(dead_code)]
+mod support;
+
 struct Fixture {
     root: PathBuf,
     state: PathBuf,
@@ -72,8 +75,10 @@ impl Fixture {
         config.telemetry.path = state.join("activity.jsonl");
         mutate(&mut config);
         let dependencies = config.server.allow_dependency_roots.clone();
-        let guard =
-            Arc::new(RootGuard::new([root.clone()], dependencies).expect("create root guard"));
+        let guard = Arc::new(
+            RootGuard::new(config.server.allow_roots.clone(), dependencies)
+                .expect("create root guard"),
+        );
         let change = Arc::new(
             ChangeService::new(
                 config.clone(),
@@ -102,9 +107,11 @@ impl Fixture {
     }
 
     async fn execute(&self, request: WorkRequest) -> WorkOutcome {
-        self.work
-            .execute(request, &self.workspace(), CancellationToken::new(), None)
-            .await
+        Box::pin(
+            self.work
+                .execute(request, &self.workspace(), CancellationToken::new(), None),
+        )
+        .await
     }
 }
 
@@ -203,7 +210,7 @@ fn digest(path: &Path) -> String {
     let bytes = fs::read(path).expect("read digest target");
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn original_hashes(fixture: &Fixture) -> Vec<(String, String)> {
@@ -226,6 +233,103 @@ fn assert_unchanged(fixture: &Fixture, expected: &[(String, String)]) {
 const BAD_CANDIDATE: &str = "pub fn value() -> u8 { let x: u8 = 1; x = 2; x }";
 const DIFFERENT_FAILURE: &str = "let mut x: u8 = 1; x = 2; \"bad\"";
 const FIXED_CANDIDATE: &str = "let mut x: u8 = 1; x = 2; x";
+
+#[tokio::test]
+async fn wrong_authority_requests_do_not_poison_or_consume_another_works_handoff() {
+    let state = support::TestRoot::new("work-authority-state");
+    let fixture = Fixture::new(
+        "work-authority",
+        b"pub fn value() -> u8 { 1 }\n",
+        |config| {
+            config.server.allow_roots =
+                vec![config.server.allow_roots[0].parent().unwrap().to_owned()];
+            config.gate.cache_dir = state.path().join("cache");
+            config.gate.lease_dir = state.path().join("leases");
+            config.change.scratch_dir = state.path().join("change");
+            config.docs.cache_dir = state.path().join("docs");
+            config.telemetry.path = state.path().join("activity.jsonl");
+            config
+                .validate()
+                .expect("isolated authority fixture config");
+        },
+    );
+    let start = fixture
+        .execute(start_request(
+            intent(),
+            vec![patch(
+                "src/lib.rs",
+                "pub fn value() -> u8 { 1 }",
+                BAD_CANDIDATE,
+            )],
+            budget(4, 3),
+        ))
+        .await;
+    assert_eq!(start.status, "NEEDS_MODEL", "{start:#?}");
+    let work_id = start.data.work_id.clone().unwrap();
+    let handoff = start.data.handoff.clone().unwrap();
+    let other = fixture.state.join("other-client");
+    fs::create_dir(&other).unwrap();
+    let wrong_selection = workspace_of(&fixture.guard, &other);
+    assert_eq!(wrong_selection.epoch(), fixture.workspace().epoch());
+    assert_eq!(
+        wrong_selection.root().path(),
+        fixture.workspace().root().path()
+    );
+    let other_guard = RootGuard::new([other], std::iter::empty()).unwrap();
+    let wrong_root = other_guard
+        .snapshot(ClientRoots::unsupported())
+        .unwrap()
+        .select(None)
+        .unwrap();
+    let other_epoch_guard = RootGuard::new([fixture.root.clone()], std::iter::empty()).unwrap();
+    other_epoch_guard.invalidate_client_roots().unwrap();
+    let wrong_epoch = other_epoch_guard
+        .snapshot(ClientRoots::unsupported())
+        .unwrap()
+        .select(None)
+        .unwrap();
+    for workspace in [&wrong_selection, &wrong_root, &wrong_epoch] {
+        for request in [
+            inspect_request(&work_id),
+            cancel_request(&work_id),
+            resume_request(&work_id, &handoff.continuation_token, Vec::new()),
+        ] {
+            let refused = fixture
+                .work
+                .execute(request, workspace, CancellationToken::new(), None)
+                .await;
+            assert_eq!(refused.status, "STALE", "{refused:#?}");
+            assert!(refused.is_error);
+            assert!(
+                refused.data.handoff.is_none(),
+                "wrong-authority replies must not expose work evidence"
+            );
+            assert!(refused.data.change_id.is_none());
+            let owner = fixture.execute(inspect_request(&work_id)).await;
+            assert_eq!(owner.status, "INSPECTED");
+            assert_eq!(
+                owner.data.state, "needs_model",
+                "failed foreign requests must leave the owner's work active"
+            );
+            assert_eq!(owner.data.revision, start.data.revision);
+        }
+    }
+    let resumed = fixture
+        .execute(resume_request(
+            &work_id,
+            &handoff.continuation_token,
+            vec![patch(
+                "src/lib.rs",
+                "let x: u8 = 1; x = 2; x",
+                FIXED_CANDIDATE,
+            )],
+        ))
+        .await;
+    assert_eq!(
+        resumed.status, "READY",
+        "the original handoff must remain usable: {resumed:#?}"
+    );
+}
 
 #[tokio::test]
 async fn handoff_tokens_are_single_use_and_resume_reads_fresh_evidence() {

@@ -22,7 +22,7 @@ use anyhow::{Context, Result};
 use rmcp::{
     ClientLifecycleMode, ClientServiceExt, ServiceExt,
     model::{
-        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientInfo, ErrorCode,
+        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientConfig, ErrorCode,
         Implementation, ProtocolVersion,
     },
 };
@@ -626,8 +626,8 @@ async fn wall_time_budget_cancels_a_run_without_fabricating_evidence() {
     }
 }
 
-fn mcp_client_info(capabilities: ClientCapabilities) -> ClientInfo {
-    ClientInfo::new(
+fn mcp_client_info(capabilities: ClientCapabilities) -> ClientConfig {
+    ClientConfig::new(
         capabilities,
         Implementation::new("agz-rust-mcp-profile-test", "0.1.0"),
     )

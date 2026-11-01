@@ -330,7 +330,7 @@ fn safe_key(key: &str) -> String {
         .collect::<String>();
     let mut hash = Sha256::new();
     hash.update(key.as_bytes());
-    let digest = format!("{:x}", hash.finalize());
+    let digest = hex::encode(hash.finalize());
     format!(
         "{}-{}",
         if label.is_empty() { "lease" } else { &label },

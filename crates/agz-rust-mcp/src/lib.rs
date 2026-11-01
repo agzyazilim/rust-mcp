@@ -15,6 +15,7 @@ pub mod server;
 pub mod skills;
 pub mod telemetry;
 pub mod tools;
+pub mod transport;
 pub mod work;
 pub mod workspace;
 

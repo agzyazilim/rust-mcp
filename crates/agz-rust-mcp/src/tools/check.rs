@@ -1050,7 +1050,7 @@ async fn execute_prepared(
             &supervisor,
             &executable,
             &["nextest", "--version"],
-            "cargo-nextest 0.9.143",
+            "cargo-nextest 0.9.150",
             prepared.workspace_authority.clone(),
             &prepared.cache.environment,
             context.deadline,
@@ -1288,11 +1288,11 @@ async fn execute_prepared(
         }
     }
 
-    if let Some(session) = sccache {
-        if let Err(error) = session.close().await {
-            status = GateStatus::Unavailable;
-            warnings.push(error);
-        }
+    if let Some(session) = sccache
+        && let Err(error) = session.close().await
+    {
+        status = GateStatus::Unavailable;
+        warnings.push(error);
     }
     // Failed compilations also carry edits/context: validate their freshness before
     // offering patches. Cancelled/timed-out or unclean children never start new probes.
@@ -1786,7 +1786,7 @@ fn profile_id(identity: &InputIdentity, target: GateTargetId, cache: &str) -> St
     hasher.update(identity.hash.as_bytes());
     hasher.update(target.as_str().as_bytes());
     hasher.update(cache.as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn timestamp_at(instant: Instant) -> String {

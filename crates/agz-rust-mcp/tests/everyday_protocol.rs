@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use rmcp::{
     ServiceExt,
     model::{
-        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientInfo, Implementation,
+        CallToolRequestParams, CallToolResponse, ClientCapabilities, ClientConfig, Implementation,
     },
 };
 use serde_json::{Value, json};
@@ -89,7 +89,7 @@ async fn core_catalog_runs_the_complete_focused_workflow() -> Result<()> {
         service.waiting().await?;
         anyhow::Ok(())
     });
-    let client = ClientInfo::new(
+    let client = ClientConfig::new(
         ClientCapabilities::default(),
         Implementation::new("everyday-test", "1"),
     )
@@ -237,7 +237,7 @@ async fn offline_workspace_works_without_a_lockfile_at_a_small_wire_budget() -> 
         service.waiting().await?;
         anyhow::Ok(())
     });
-    let client = ClientInfo::new(
+    let client = ClientConfig::new(
         ClientCapabilities::default(),
         Implementation::new("offline-test", "1"),
     )

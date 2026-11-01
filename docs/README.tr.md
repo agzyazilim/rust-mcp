@@ -3,7 +3,7 @@
 [English](README.md) | Türkçe
 
 **AGZ Yazılım ürünüdür.** `agz-rust-mcp`, Cargo ve rustc çıktısına dayanan
-sınırlı Rust doğruluğu için bağımsız bir stdio MCP sunucusudur.
+sınırlı Rust doğruluğu için bağımsız bir stdio ve Streamable HTTP MCP sunucusudur.
 
 Bu dizin okuma yolunu tanımlar. İlk kez okurken sırayı izleyin; her adım
 Türkçe eşine ve önceki/sonraki belgeye bağlantı verir.
@@ -12,7 +12,7 @@ Türkçe eşine ve önceki/sonraki belgeye bağlantı verir.
 
 | Adım | Belge | Kapsam |
 | --- | --- | --- |
-| 1 | [Kurulum ve istemci ayarı](install.tr.md) | Tüm kurulum yöntemleri, işletim sistemi notları, OpenCode2 ve Codex yapılandırması, doğrulama ve sorun giderme. |
+| 1 | [Kurulum ve istemci ayarı](install.tr.md) | Tüm kurulum yöntemleri, işletim sistemi notları, istemciden bağımsız bağlantı ve yerleşik skilller, doğrulama ve sorun giderme. |
 | 2 | [Araçlar ve yapılandırma](tools.tr.md) | Araç kataloğu, eylemler, sonuç anlamları ve eksiksiz yapılandırma referansı. |
 | 3 | [Mimari](architecture.tr.md) | Süreç modeli, veri akışı, protokol yaşam döngüsü, yetki modeli ve kalan risk. |
 | 4 | [Doğrulama ve benchmark protokolü](benchmark.tr.md) | Provider-free smoke'lar, görev benchmark kapıları, kanıt düzeni ve release kapısı. |

@@ -1496,7 +1496,7 @@ fn probe_input_hash(request: &ApiRequest, plan: &ProbePlan) -> String {
         hasher.update(feature.as_bytes());
         hasher.update([0]);
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn build_probe_plan(
@@ -1706,7 +1706,7 @@ fn probe_module_name(request: &ApiRequest, anchor: &Path, target: &Path) -> Stri
         hasher.update(snippet.as_bytes());
         hasher.update([0]);
     }
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = hex::encode(hasher.finalize());
     format!("__agz_api_probe_{}", &digest[..12])
 }
 
@@ -2239,7 +2239,7 @@ fn feature_not_found(message: &str) -> Option<String> {
 fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(bytes);
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]

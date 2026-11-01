@@ -7,11 +7,11 @@ MCP contract.
 
 ## Setup
 
-Install Rust `1.88.0` with rustfmt, Clippy, and Rust Analyzer. Clone the
+Install Rust `1.91.0` with rustfmt, Clippy, and Rust Analyzer. Clone the
 repository and run:
 
 ```bash
-cargo +1.88.0 test --workspace --all-targets --all-features --locked
+cargo +1.91.0 test --workspace --all-targets --all-features --locked
 ```
 
 Do not edit generated files under `target/` or benchmark results. Keep new
@@ -37,7 +37,7 @@ Run focused tests while developing, then the complete gate:
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-targets --all-features --locked --no-fail-fast
-cargo +1.88.0 check --workspace --all-targets --all-features --locked
+cargo +1.91.0 check --workspace --all-targets --all-features --locked
 cargo build --release --locked
 cargo run -p xtask -- protocol-smoke
 cargo run -p xtask -- benchmark-smoke
@@ -47,11 +47,9 @@ cargo run -p xtask -- task-benchmark-smoke
 Use the ignored real Rust Analyzer and documentation tests when those adapters
 change. Run `cargo deny check` for dependency or policy changes.
 
-The core CI runs on Linux, macOS, and Windows and does not require a particular
-MCP client or model provider. When changing the legacy OpenCode2 adapter, install
-the pinned client and run `cargo run -p xtask -- opencode-smoke` separately. The
-CI workflow's manual `legacy_opencode` input enables the same optional
-compatibility job; it is not part of the release regression gate.
+The CI runs on Linux, macOS, and Windows without installing an agent harness or
+using a model provider. Verify compatibility through the standard MCP protocol;
+client-specific setup examples must not become runtime or release dependencies.
 
 ## Pull Requests
 

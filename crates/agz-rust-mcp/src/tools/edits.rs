@@ -667,16 +667,16 @@ pub async fn semantic_refactor(
                         .get("kind")
                         .and_then(Value::as_str)
                         .unwrap_or("command");
-                    if let Some(only) = &only {
-                        if !only.is_empty() && !only.iter().any(|prefix| kind == prefix || kind.starts_with(&format!("{prefix}."))) {
-                            continue;
-                        }
+                    if let Some(only) = &only
+                        && !only.is_empty() && !only.iter().any(|prefix| kind == prefix || kind.starts_with(&format!("{prefix}.")))
+                    {
+                        continue;
                     }
                     lines.push(format!("\n[{}] {title} ({kind})", index.saturating_add(1)));
-                    if let Some(diagnostics) = action.get("diagnostics").and_then(Value::as_array) {
-                        if !diagnostics.is_empty() {
-                            lines.push(format!("diagnostics: {}", diagnostics.len()));
-                        }
+                    if let Some(diagnostics) = action.get("diagnostics").and_then(Value::as_array)
+                        && !diagnostics.is_empty()
+                    {
+                        lines.push(format!("diagnostics: {}", diagnostics.len()));
                     }
                     if let Some(disabled) = action.get("disabled") {
                         lines.push(format!(

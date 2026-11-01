@@ -226,7 +226,7 @@ impl ActivityLog {
         let mut hasher = Sha256::new();
         hasher.update(self.salt);
         hasher.update(value.as_bytes());
-        format!("{:x}", hasher.finalize())
+        hex::encode(hasher.finalize())
     }
 }
 

@@ -1512,10 +1512,10 @@ fn selected_impacts(candidates: &[RepairCandidateData], id: &str) -> Vec<String>
 fn diagnostic_files(diagnostics: &[crate::change::ChangeDiagnosticData]) -> Vec<String> {
     let mut files = BTreeSet::new();
     for diagnostic in diagnostics.iter().take(MAX_ANALYZED_DIAGNOSTICS) {
-        if let Some(file) = diagnostic.file.as_deref() {
-            if is_rust_file(file) {
-                files.insert(file.to_owned());
-            }
+        if let Some(file) = diagnostic.file.as_deref()
+            && is_rust_file(file)
+        {
+            files.insert(file.to_owned());
         }
     }
     files.into_iter().take(16).collect()
@@ -1623,13 +1623,13 @@ fn actions_to_patches(raw: &Value, uri: &str, text: &str, file: &str) -> Vec<Vec
             continue;
         };
         let mut edits = Vec::new();
-        if let Some(changes) = edit.get("changes").and_then(Value::as_object) {
-            if let Some(list) = changes.get(uri).and_then(Value::as_array) {
-                edits.extend(
-                    list.iter()
-                        .filter_map(|edit| lsp_edit_to_patch(edit, text, file)),
-                );
-            }
+        if let Some(changes) = edit.get("changes").and_then(Value::as_object)
+            && let Some(list) = changes.get(uri).and_then(Value::as_array)
+        {
+            edits.extend(
+                list.iter()
+                    .filter_map(|edit| lsp_edit_to_patch(edit, text, file)),
+            );
         }
         if let Some(document_changes) = edit.get("documentChanges").and_then(Value::as_array) {
             for change in document_changes {

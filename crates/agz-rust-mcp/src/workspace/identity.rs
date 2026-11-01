@@ -1349,7 +1349,7 @@ impl IdentityHasher {
     }
 
     fn finish(self) -> String {
-        format!("{:x}", self.hasher.finalize())
+        hex::encode(self.hasher.finalize())
     }
 }
 

@@ -5,7 +5,11 @@ description: Measure and improve Rust build or runtime performance with AGZ Rust
 
 # Measured Rust performance
 
-Use the connected AGZ Rust MCP with the active checkout's absolute `dir`.
+Discover the connected AGZ Rust MCP's available tools once; client prefixes vary.
+Use the active checkout's absolute `dir` for project operations. The `profile`
+and `change` workflows below require the full catalog. With core, validate with
+check/test and run an existing executable benchmark example using `run`; use the
+project's approved benchmark runner for workloads the MCP cannot execute.
 Choose the metric before changing code: build latency, runtime latency/CPU,
 memory, or response bytes. Record source revision, workload, configuration,
 toolchain, platform and warm/cold cache conditions for both sides.

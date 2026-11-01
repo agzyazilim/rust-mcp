@@ -1,8 +1,9 @@
 //! Bounded in-memory capsule store.
 //!
 //! The store is a best-effort revision cache: entries expire by TTL, the ring
-//! evicts the oldest insertion when full, and a root-epoch change invalidates
-//! every stored capsule. Lookups never fabricate an empty previous capsule.
+//! evicts the oldest insertion when full, and lookups require a matching root
+//! epoch. An epoch mismatch refuses access without evicting another authority's
+//! capsule. Lookups never fabricate an empty previous capsule.
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -21,7 +22,7 @@ pub struct StoredCapsule {
 #[derive(Debug, Clone)]
 pub enum StoreLookup {
     Found(Box<StoredCapsule>),
-    /// The entry was evicted by TTL or a root-epoch change.
+    /// The entry expired by TTL or is inaccessible under the requested root epoch.
     Expired {
         reason: String,
     },
@@ -95,8 +96,9 @@ impl CapsuleStore {
             };
         }
         if entry.capsule.identity.root_epoch != root_epoch {
-            state.entries.remove(capsule_id);
-            state.order.retain(|candidate| candidate != capsule_id);
+            // Another HTTP client may have a different valid authority epoch.
+            // Reject that lookup without evicting the owner's still-valid data.
+            // TTL and the bounded ring continue to reclaim obsolete capsules.
             return StoreLookup::Expired {
                 reason: format!(
                     "root epoch changed from {} to {root_epoch}; stored capsule handles are invalidated",
@@ -181,13 +183,14 @@ mod tests {
     }
 
     #[test]
-    fn epoch_change_invalidates_stored_capsules() {
+    fn wrong_epoch_refuses_access_without_evicting_another_authoritys_capsule() {
         let store = CapsuleStore::new(4, Duration::from_secs(60));
         store.insert(capsule("a", 1));
         assert!(matches!(
             store.lookup("a", 2),
             StoreLookup::Expired { reason } if reason.contains("root epoch changed")
         ));
-        assert_eq!(store.len(), 0);
+        assert_eq!(store.len(), 1);
+        assert!(matches!(store.lookup("a", 1), StoreLookup::Found(_)));
     }
 }

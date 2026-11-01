@@ -552,12 +552,12 @@ pub fn item_id(
     hasher.update(line.unwrap_or(0).to_le_bytes());
     hasher.update(b"\0");
     hasher.update(symbol.unwrap_or("").as_bytes());
-    let digest = format!("{:x}", hasher.finalize());
+    let digest = hex::encode(hasher.finalize());
     digest.chars().take(24).collect()
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
+    hex::encode(Sha256::digest(bytes))
 }
 
 pub fn anchors_hash(anchors: &[ContextAnchor]) -> String {

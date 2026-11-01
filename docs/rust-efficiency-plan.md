@@ -58,9 +58,9 @@ speed. Sources and reproducible commands accompany the raw samples.
 
 ## 6. Explicit optional acceleration
 
-Nextest 0.9.143 is opt-in; missing/wrong tooling returns unavailability rather
+Nextest 0.9.150 is opt-in; missing/wrong tooling returns unavailability rather
 than silently changing the requested runner. Test filtering has no full-pass
-claim, and `all` retains a separate Cargo doctest stage. Sccache 0.17.0 requires
+claim, and `all` retains a separate Cargo doctest stage. Sccache 0.19.0 requires
 an explicitly configured absolute `RUSTC_WRAPPER`. The MCP owns a foreground
 Unix-socket cache server and keeps compilation client-side in the supervised
 process tree. It selects a local bounded cache, excludes remote/distributed

@@ -471,13 +471,45 @@ impl ChangeService {
         cancellation: CancellationToken,
         progress: Option<ProgressCallback>,
     ) -> ChangeOutcome {
+        // A change id is only a handle, never workspace authority. Check the
+        // immutable capture identity before any action can expose or mutate its
+        // record. In particular, sibling projects may share a configured root
+        // and epoch while still representing different selected workspaces.
+        if request.action != ChangeAction::Create
+            && let Some(id) = request
+                .change_id
+                .as_deref()
+                .filter(|id| is_valid_change_id(id))
+        {
+            match self.store.load(id) {
+                Ok(Some(record)) if !request_authorizes_record(workspace, &record) => {
+                    return self.error_outcome(
+                        request.action,
+                        "STALE",
+                        "The change belongs to a different selected workspace.",
+                        "the captured workspace is not authorized by this request; no record was returned or changed",
+                        Some(id),
+                    );
+                }
+                Err(reason) => {
+                    return self.error_outcome(
+                        request.action,
+                        "INVALID",
+                        "The change record could not be read.",
+                        reason,
+                        Some(id),
+                    );
+                }
+                Ok(_) => {}
+            }
+        }
         match request.action {
             ChangeAction::Create => self.create(workspace, cancellation).await,
             ChangeAction::Stage => self.stage(request, workspace, cancellation).await,
             ChangeAction::Migrate => {
                 Box::pin(self.migrate(request, workspace, cancellation, progress)).await
             }
-            ChangeAction::Inspect => self.inspect(request),
+            ChangeAction::Inspect => self.inspect(request, workspace),
             ChangeAction::Validate => {
                 self.validate(request, workspace, cancellation, progress)
                     .await
@@ -1248,7 +1280,7 @@ impl ChangeService {
         Ok((record, report))
     }
 
-    fn inspect(&self, request: ChangeRequest) -> ChangeOutcome {
+    fn inspect(&self, request: ChangeRequest, workspace: &WorkspaceRoot) -> ChangeOutcome {
         let Some(id) = request.change_id.clone() else {
             return self.error_outcome(
                 ChangeAction::Inspect,
@@ -1279,7 +1311,14 @@ impl ChangeService {
                 );
             }
         };
-        let data = data_for_record(ChangeAction::Inspect, &record, None);
+        let mut data = data_for_record(ChangeAction::Inspect, &record, None);
+        // Inspection and cleanup remain possible for an authorized stale record,
+        // but an earlier epoch's validation must not be presented as current.
+        if record.workspace_epoch != workspace.epoch() {
+            data.verified = false;
+            data.reason = "authorization epoch changed; inspect does not renew validation evidence"
+                .to_owned();
+        }
         self.finish(
             "INSPECTED",
             "Returned the bounded change record.",
@@ -2195,12 +2234,11 @@ fn relative_diagnostic_file(file: Option<&str>, root: Option<&Path>) -> Option<S
     let normalized = file.replace('\\', "/");
     let root = root?;
     let path = Path::new(&normalized);
-    if path.is_absolute() {
-        if let Ok(relative) = path.strip_prefix(root) {
-            if let Some(relative) = relative.to_str() {
-                return Some(relative.replace('\\', "/"));
-            }
-        }
+    if path.is_absolute()
+        && let Ok(relative) = path.strip_prefix(root)
+        && let Some(relative) = relative.to_str()
+    {
+        return Some(relative.replace('\\', "/"));
     }
     Some(normalized)
 }
@@ -2718,7 +2756,7 @@ fn base_identity(epoch: u64, manifest_digest: &str, capture_root: &Path) -> Stri
     hasher.update(manifest_digest.as_bytes());
     hasher.update(b"\0");
     hasher.update(capture_root.to_string_lossy().as_bytes());
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 fn next_change_id() -> String {
@@ -2729,6 +2767,17 @@ fn next_change_id() -> String {
         std::process::id(),
         sequence
     )
+}
+
+fn request_authorizes_record(workspace: &WorkspaceRoot, record: &ChangeRecord) -> bool {
+    workspace.authority().contains(&record.workspace_root)
+        && (path_is_within(&record.workspace_root, workspace.path())
+            // Creation may select the sole Cargo project below an explicitly
+            // requested directory. Preserve that selection, while refusing an
+            // ambiguous parent or a sibling project under the same allow-root.
+            || select_in_root(workspace).is_ok_and(|selection| {
+                path_is_within(&record.workspace_root, selection.package_root())
+            }))
 }
 
 fn path_is_within(root: &Path, candidate: &Path) -> bool {
@@ -3166,7 +3215,7 @@ fn compute_patch_hash(
         hasher.update(file.bytes.to_string().as_bytes());
         hasher.update(b"\0");
     }
-    format!("{:x}", hasher.finalize())
+    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]

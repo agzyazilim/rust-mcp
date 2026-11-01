@@ -1,12 +1,6 @@
-#[path = "../src/evidence.rs"]
-mod evidence;
-
-#[path = "../src/benchmark_tasks.rs"]
-mod benchmark_tasks;
-
 use std::{collections::BTreeMap, path::PathBuf};
 
-use benchmark_tasks::{BenchmarkArm, evaluate_provider_free_replay};
+use xtask::benchmark_tasks::{BenchmarkArm, evaluate_provider_free_replay};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
